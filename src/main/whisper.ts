@@ -49,23 +49,28 @@ export function isCliBinaryAvailable(): boolean {
   return fs.existsSync(getCliBinaryPath())
 }
 
+// Returns true if the model is too large for real-time streaming on CPU
+export function isHeavyModel(modelId: string): boolean {
+  return modelId.includes('large') || modelId.includes('medium')
+}
+
 // --- Streaming mode: real-time mic capture + transcription via whisper-stream ---
 
 export interface StreamOptions {
   modelId: string
   language?: string
-  onPartial?: (currentWindow: string, fullTranscript: string) => void
+  onPartial?: (fullTranscript: string) => void
   onError?: (error: string) => void
 }
 
-// Accumulated transcript segments from completed windows
-let accumulatedSegments: string[] = []
-let currentWindowText = ''
+// Accumulated transcript: committed segments + current in-progress line
+let committedSegments: string[] = []
+let currentLine = ''
 
 export function getFullTranscript(): string {
-  const segments = [...accumulatedSegments]
-  if (currentWindowText) segments.push(currentWindowText)
-  return segments.join(' ').replace(/\s+/g, ' ').trim()
+  const parts = [...committedSegments]
+  if (currentLine) parts.push(currentLine)
+  return parts.join(' ').replace(/\s+/g, ' ').trim()
 }
 
 export function startStream(options: StreamOptions): void {
@@ -83,19 +88,12 @@ export function startStream(options: StreamOptions): void {
     return
   }
 
-  // Adjust streaming parameters based on model size
-  // Larger models need longer step intervals to keep up with real-time
-  const isLargeModel = modelId.includes('large') || modelId.includes('medium')
-  const step = isLargeModel ? '4000' : '2000'
-  const length = isLargeModel ? '8000' : '5000'
-  const threads = isLargeModel ? '8' : '4'
-
   const args = [
     '-m', modelPath,
-    '-t', threads,
-    '--step', step,
-    '--length', length,
-    '--keep', '500',
+    '-t', '4',
+    '--step', '3000',
+    '--length', '8000',
+    '--keep', '1000',
     '--keep-context',
     '--vad-thold', '0.5'
   ]
@@ -108,40 +106,38 @@ export function startStream(options: StreamOptions): void {
 
   whisperProcess = spawn(binaryPath, args)
 
-  accumulatedSegments = []
-  currentWindowText = ''
-  let lastCleanedText = ''
+  committedSegments = []
+  currentLine = ''
+  let rawBuffer = ''
 
   whisperProcess.stdout?.on('data', (data: Buffer) => {
-    const raw = data.toString()
-    // Strip all ANSI escape sequences (cursor moves, erase line, colors, etc.)
-    const stripped = raw.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
-    // whisper-stream uses \r to overwrite lines, split on both \r and \n
-    const lines = stripped.split(/[\r\n]+/)
-    for (const line of lines) {
-      // Strip whisper timestamp brackets like [00:00:00.000 --> 00:00:05.000]
-      const cleaned = line.replace(/\[[\d:.]+\s*-->\s*[\d:.]+\]/g, '').trim()
-      if (!cleaned) continue
-      // Filter out status messages and init noise
-      if (cleaned.startsWith('whisper_') || cleaned.startsWith('main:') || cleaned.startsWith('init:')) continue
-      if (cleaned === '[Start speaking]' || cleaned === '[silence]') continue
+    rawBuffer += data.toString()
 
-      // Detect new segment: if the new text doesn't start with/contain the previous text,
-      // it's likely a new window — commit the previous window text
-      if (lastCleanedText && cleaned !== lastCleanedText) {
-        const overlap = findOverlap(lastCleanedText, cleaned)
-        if (overlap < lastCleanedText.length * 0.3) {
-          // Significantly different text — new window, commit the old one
-          if (lastCleanedText) {
-            accumulatedSegments.push(lastCleanedText)
-          }
-        }
+    // Strip ANSI escape sequences
+    const clean = rawBuffer.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+
+    // Split on newlines — \n marks a committed segment boundary
+    const nlParts = clean.split('\n')
+
+    // All parts except the last are committed (ended with \n)
+    for (let i = 0; i < nlParts.length - 1; i++) {
+      const segment = extractLastCR(nlParts[i])
+      if (segment && !isNoise(segment)) {
+        committedSegments.push(segment)
+        console.log(`[whisper-stream] Committed segment: "${segment}"`)
       }
-
-      lastCleanedText = cleaned
-      currentWindowText = cleaned
-      onPartial?.(cleaned, getFullTranscript())
     }
+
+    // The last part is the current in-progress line (may still be refined via \r)
+    const inProgress = extractLastCR(nlParts[nlParts.length - 1])
+    if (inProgress && !isNoise(inProgress)) {
+      currentLine = inProgress
+    }
+
+    // Keep only the last (uncommitted) part in the buffer
+    rawBuffer = nlParts[nlParts.length - 1]
+
+    onPartial?.(getFullTranscript())
   })
 
   whisperProcess.stderr?.on('data', (data: Buffer) => {
@@ -155,9 +151,38 @@ export function startStream(options: StreamOptions): void {
   })
 
   whisperProcess.on('close', (code) => {
+    // Commit any remaining text in the buffer
+    if (rawBuffer) {
+      const remaining = extractLastCR(rawBuffer.replace(/\x1b\[[0-9;]*[A-Za-z]/g, ''))
+      if (remaining && !isNoise(remaining)) {
+        committedSegments.push(remaining)
+      }
+      rawBuffer = ''
+    }
     console.log(`[whisper-stream] Exited with code ${code}`)
     whisperProcess = null
   })
+}
+
+// whisper-stream uses \r to overwrite the current line with refinements.
+// Extract the last (most refined) text after the final \r.
+function extractLastCR(text: string): string {
+  const parts = text.split('\r')
+  // Walk backwards to find last non-empty part
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const cleaned = parts[i].replace(/\[[\d:.]+\s*-->\s*[\d:.]+\]/g, '').trim()
+    if (cleaned) return cleaned
+  }
+  return ''
+}
+
+function isNoise(text: string): boolean {
+  if (!text) return true
+  if (text === '[Start speaking]' || text === '[silence]') return true
+  if (text.startsWith('whisper_') || text.startsWith('main:') || text.startsWith('init:') || text.startsWith('SDL_main:')) return true
+  // Filter out text that is only brackets/punctuation
+  if (/^\[.*\]$/.test(text)) return true
+  return false
 }
 
 export function stopStream(): string {
@@ -166,24 +191,12 @@ export function stopStream(): string {
     whisperProcess.kill()
     whisperProcess = null
   }
-  accumulatedSegments = []
-  currentWindowText = ''
+  committedSegments = []
+  currentLine = ''
   return transcript
 }
 
-// Find how many characters at the end of `prev` overlap with the start of `next`
-function findOverlap(prev: string, next: string): number {
-  const maxCheck = Math.min(prev.length, next.length)
-  let best = 0
-  for (let i = 1; i <= maxCheck; i++) {
-    if (prev.endsWith(next.substring(0, i))) {
-      best = i
-    }
-  }
-  return best
-}
-
-// --- Batch mode: transcribe a file via whisper-cli (fallback) ---
+// --- Batch mode: transcribe a file via whisper-cli ---
 
 export interface TranscribeOptions {
   audioPath: string
@@ -213,9 +226,8 @@ export function transcribe(options: TranscribeOptions): void {
     '-m', modelPath,
     '-f', audioPath,
     '--no-timestamps',
-    '--print-progress',
     '-np',
-    '-t', '4'
+    '-t', '8'
   ]
 
   if (language && language !== 'auto') {
@@ -228,7 +240,7 @@ export function transcribe(options: TranscribeOptions): void {
   let fullText = ''
 
   whisperProcess.stdout?.on('data', (data: Buffer) => {
-    const text = data.toString().trim()
+    const text = data.toString().replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').trim()
     if (text) {
       fullText += text + ' '
       onPartial?.(fullText.trim())
@@ -237,12 +249,7 @@ export function transcribe(options: TranscribeOptions): void {
 
   whisperProcess.stderr?.on('data', (data: Buffer) => {
     const msg = data.toString()
-    const progressMatch = msg.match(/progress\s*=\s*(\d+)%/)
-    if (progressMatch) {
-      onPartial?.(`⏳ Transcribing... ${progressMatch[1]}%`)
-    } else if (msg.includes('error') || msg.includes('failed')) {
-      console.error(`[whisper-cli] Error: ${msg}`)
-    }
+    console.log(`[whisper-cli] stderr: ${msg.trim()}`)
   })
 
   whisperProcess.on('close', (code) => {
