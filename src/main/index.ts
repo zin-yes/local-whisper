@@ -184,12 +184,12 @@ function handleStartRecording(): void {
   startStream({
     modelId: settings.activeModel,
     language: settings.language,
-    onPartial: (text) => {
-      streamedText = text
+    onPartial: (currentWindow, fullTranscript) => {
+      streamedText = fullTranscript
       if (settings.overlayEnabled) {
-        updateOverlay(streamedText)
+        updateOverlay(fullTranscript)
       }
-      mainWindow?.webContents.send(IPC_CHANNELS.TRANSCRIPTION_PARTIAL, streamedText)
+      mainWindow?.webContents.send(IPC_CHANNELS.TRANSCRIPTION_PARTIAL, fullTranscript)
     },
     onError: (error) => {
       isRecordingActive = false
@@ -207,12 +207,11 @@ async function handleStopRecording(): Promise<void> {
   if (!isRecordingActive) return
 
   isRecordingActive = false
-  stopStream()
+  const finalText = stopStream()
   hideOverlay()
 
   mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
 
-  const finalText = streamedText.trim()
   console.log(`[main] Streaming stopped. Text: "${finalText}"`)
 
   if (finalText) {

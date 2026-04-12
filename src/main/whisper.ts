@@ -54,8 +54,18 @@ export function isCliBinaryAvailable(): boolean {
 export interface StreamOptions {
   modelId: string
   language?: string
-  onPartial?: (text: string) => void
+  onPartial?: (currentWindow: string, fullTranscript: string) => void
   onError?: (error: string) => void
+}
+
+// Accumulated transcript segments from completed windows
+let accumulatedSegments: string[] = []
+let currentWindowText = ''
+
+export function getFullTranscript(): string {
+  const segments = [...accumulatedSegments]
+  if (currentWindowText) segments.push(currentWindowText)
+  return segments.join(' ').replace(/\s+/g, ' ').trim()
 }
 
 export function startStream(options: StreamOptions): void {
@@ -98,7 +108,9 @@ export function startStream(options: StreamOptions): void {
 
   whisperProcess = spawn(binaryPath, args)
 
-  let fullText = ''
+  accumulatedSegments = []
+  currentWindowText = ''
+  let lastCleanedText = ''
 
   whisperProcess.stdout?.on('data', (data: Buffer) => {
     const raw = data.toString()
@@ -113,9 +125,22 @@ export function startStream(options: StreamOptions): void {
       // Filter out status messages and init noise
       if (cleaned.startsWith('whisper_') || cleaned.startsWith('main:') || cleaned.startsWith('init:')) continue
       if (cleaned === '[Start speaking]' || cleaned === '[silence]') continue
-      // whisper-stream rewrites the current line — treat each output as the full current text
-      fullText = cleaned
-      onPartial?.(fullText)
+
+      // Detect new segment: if the new text doesn't start with/contain the previous text,
+      // it's likely a new window — commit the previous window text
+      if (lastCleanedText && cleaned !== lastCleanedText) {
+        const overlap = findOverlap(lastCleanedText, cleaned)
+        if (overlap < lastCleanedText.length * 0.3) {
+          // Significantly different text — new window, commit the old one
+          if (lastCleanedText) {
+            accumulatedSegments.push(lastCleanedText)
+          }
+        }
+      }
+
+      lastCleanedText = cleaned
+      currentWindowText = cleaned
+      onPartial?.(cleaned, getFullTranscript())
     }
   })
 
@@ -135,11 +160,27 @@ export function startStream(options: StreamOptions): void {
   })
 }
 
-export function stopStream(): void {
+export function stopStream(): string {
+  const transcript = getFullTranscript()
   if (whisperProcess) {
     whisperProcess.kill()
     whisperProcess = null
   }
+  accumulatedSegments = []
+  currentWindowText = ''
+  return transcript
+}
+
+// Find how many characters at the end of `prev` overlap with the start of `next`
+function findOverlap(prev: string, next: string): number {
+  const maxCheck = Math.min(prev.length, next.length)
+  let best = 0
+  for (let i = 1; i <= maxCheck; i++) {
+    if (prev.endsWith(next.substring(0, i))) {
+      best = i
+    }
+  }
+  return best
 }
 
 // --- Batch mode: transcribe a file via whisper-cli (fallback) ---
