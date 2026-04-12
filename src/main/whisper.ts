@@ -8,9 +8,9 @@ let whisperProcess: ChildProcess | null = null
 function getWhisperBinaryPath(): string {
   const isDev = !app.isPackaged
   if (isDev) {
-    return path.join(app.getAppPath(), 'resources', 'whisper', 'main.exe')
+    return path.join(app.getAppPath(), 'resources', 'whisper', 'whisper-cli.exe')
   }
-  return path.join(process.resourcesPath, 'whisper', 'main.exe')
+  return path.join(process.resourcesPath, 'whisper', 'whisper-cli.exe')
 }
 
 function getModelsDir(): string {
@@ -49,7 +49,7 @@ export function transcribe(options: TranscribeOptions): void {
   const modelPath = getModelPath(modelId)
 
   if (!fs.existsSync(binaryPath)) {
-    onError?.(`Whisper binary not found at: ${binaryPath}. Please place main.exe in resources/whisper/`)
+    onError?.(`Whisper binary not found at: ${binaryPath}. Please place whisper-cli.exe in resources/whisper/`)
     return
   }
 

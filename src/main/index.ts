@@ -17,9 +17,9 @@ let isTranscribing = false
 function getWhisperBinaryPath(): string {
   const isDev = !app.isPackaged
   if (isDev) {
-    return path.join(app.getAppPath(), 'resources', 'whisper', 'main.exe')
+    return path.join(app.getAppPath(), 'resources', 'whisper', 'whisper-cli.exe')
   }
-  return path.join(process.resourcesPath, 'whisper', 'main.exe')
+  return path.join(process.resourcesPath, 'whisper', 'whisper-cli.exe')
 }
 
 function showError(error: string): void {
@@ -172,7 +172,7 @@ function handleStartRecording(): void {
   // Validate whisper binary exists
   const binaryPath = getWhisperBinaryPath()
   if (!fs.existsSync(binaryPath)) {
-    const error = `❌ Whisper binary not found. Please ensure main.exe is in the resources/whisper/ folder. Expected at: ${binaryPath}`
+    const error = `❌ Whisper binary not found. Please ensure whisper-cli.exe is in the resources/whisper/ folder. Expected at: ${binaryPath}`
     showError(error)
     mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
     return
@@ -283,7 +283,7 @@ function handleTranscription(audioPath: string): void {
       // Parse error to provide user-friendly message
       let userError = error
       if (error.includes('Whisper binary not found')) {
-        userError = '❌ Whisper binary not found. Please ensure main.exe is in the resources/whisper/ folder.'
+        userError = '❌ Whisper binary not found. Please ensure whisper-cli.exe is in the resources/whisper/ folder.'
       } else if (error.includes('Model not found')) {
         userError = '❌ Selected model not found. Please download it from Settings.'
       } else if (error.includes('exited with code')) {
