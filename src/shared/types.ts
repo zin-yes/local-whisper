@@ -9,6 +9,9 @@ export const IPC_CHANNELS = {
   TRANSCRIPTION_COMPLETE: 'transcription:complete',
   TRANSCRIPTION_ERROR: 'transcription:error',
 
+  // Error notifications
+  SHOW_ERROR: 'error:show',
+
   // Overlay
   OVERLAY_SHOW: 'overlay:show',
   OVERLAY_HIDE: 'overlay:hide',

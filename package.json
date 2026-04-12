@@ -39,6 +39,10 @@
   "build": {
     "appId": "com.localwhisper.app",
     "productName": "Local Whisper",
+    "directories": {
+      "output": "dist/",
+      "buildResources": "build"
+    },
     "win": {
       "target": [
         "nsis"
@@ -49,6 +53,10 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },
+    "asar": true,
+    "asarUnpack": [
+      "**/*.node"
+    ],
     "extraResources": [
       {
         "from": "resources/whisper",

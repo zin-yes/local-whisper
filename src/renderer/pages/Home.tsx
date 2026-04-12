@@ -14,6 +14,8 @@ export default function Home() {
   const [isTranscribing, setIsTranscribing] = useState(false)
   const [partialText, setPartialText] = useState('')
   const [history, setHistory] = useState<TranscriptionResult[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [errorKey, setErrorKey] = useState(0)
 
   useEffect(() => {
     // Load initial data
@@ -36,6 +38,14 @@ export default function Home() {
       window.electronAPI.onTranscriptionError((error) => {
         console.error('Transcription error:', error)
         setPartialText('')
+      }),
+      window.electronAPI.onError((error) => {
+        setError(error)
+        setErrorKey(k => k + 1)
+        // Auto-dismiss error after 8 seconds
+        setTimeout(() => {
+          setError(null)
+        }, 8000)
       })
     ]
 
@@ -67,6 +77,33 @@ export default function Home() {
   return (
     <div>
       <h2 className="page-title">Home</h2>
+
+      {/* Error banner */}
+      {error && (
+        <div key={errorKey} className="error-banner">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+            <div style={{ flex: 1, fontSize: '14px', lineHeight: '1.5' }}>
+              {error}
+            </div>
+            <button
+              onClick={() => setError(null)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                padding: '2px',
+                fontSize: '16px',
+                minWidth: '20px',
+                minHeight: '20px'
+              }}
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Status card */}
       <div className="card">

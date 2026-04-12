@@ -46,6 +46,12 @@ const electronAPI = {
     return () => ipcRenderer.removeAllListeners(IPC_CHANNELS.TRANSCRIPTION_ERROR)
   },
 
+  // Error notifications
+  onError: (callback: (error: string) => void) => {
+    ipcRenderer.on(IPC_CHANNELS.SHOW_ERROR, (_event, error) => callback(error))
+    return () => ipcRenderer.removeAllListeners(IPC_CHANNELS.SHOW_ERROR)
+  },
+
   // Overlay
   onOverlayUpdate: (callback: (text: string) => void) => {
     ipcRenderer.on('overlay:update', (_event, text) => callback(text))

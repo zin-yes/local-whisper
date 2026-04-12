@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron'
 import * as path from 'path'
+import * as fs from 'fs'
 import { getSettings, setSettings, getHistory, addToHistory, clearHistory } from './store'
 import { registerHotkey, unregisterHotkey, resetRecordingState } from './hotkey'
 import { startRecording, stopRecording, cleanupTempFiles } from './recorder'
@@ -12,6 +13,19 @@ import { IPC_CHANNELS, AppStatus, TranscriptionResult } from '../shared/types'
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isTranscribing = false
+
+function getWhisperBinaryPath(): string {
+  const isDev = !app.isPackaged
+  if (isDev) {
+    return path.join(app.getAppPath(), 'resources', 'whisper', 'main.exe')
+  }
+  return path.join(process.resourcesPath, 'whisper', 'main.exe')
+}
+
+function showError(error: string): void {
+  console.error(`[main] Error: ${error}`)
+  mainWindow?.webContents.send(IPC_CHANNELS.SHOW_ERROR, error)
+}
 
 function createMainWindow(): BrowserWindow {
   mainWindow = new BrowserWindow({
@@ -155,6 +169,30 @@ function setupIPC(): void {
 function handleStartRecording(): void {
   const settings = getSettings()
 
+  // Validate whisper binary exists
+  const binaryPath = getWhisperBinaryPath()
+  if (!fs.existsSync(binaryPath)) {
+    const error = `❌ Whisper binary not found. Please ensure main.exe is in the resources/whisper/ folder. Expected at: ${binaryPath}`
+    showError(error)
+    mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
+    return
+  }
+
+  // Validate a model is selected and downloaded
+  if (!settings.activeModel) {
+    const error = '❌ No model selected. Please download and select a model in Settings.'
+    showError(error)
+    mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
+    return
+  }
+
+  if (!isModelDownloaded(settings.activeModel)) {
+    const error = `❌ Model "${settings.activeModel}" is not downloaded. Please download it from Settings before recording.`
+    showError(error)
+    mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
+    return
+  }
+
   mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: true })
 
   if (settings.overlayEnabled) {
@@ -172,7 +210,18 @@ function handleStartRecording(): void {
     onError: (error) => {
       console.error(`[main] Recording error: ${error}`)
       hideOverlay()
-      mainWindow?.webContents.send(IPC_CHANNELS.TRANSCRIPTION_ERROR, error)
+      // Parse error to provide user-friendly message
+      let userError = error
+      if (error.includes('NotAllowedError') || error.includes('Permission denied')) {
+        userError = '❌ Microphone access denied. Please enable microphone permissions in your system settings.'
+      } else if (error.includes('NotFoundError') || error.includes('no device')) {
+        userError = '❌ No microphone found. Please connect a microphone and try again.'
+      } else if (error.includes('ffmpeg')) {
+        userError = '❌ Audio conversion failed. Please install ffmpeg to use this app: https://ffmpeg.org/download.html'
+      } else {
+        userError = `❌ Recording error: ${error}`
+      }
+      showError(userError)
       mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
       resetRecordingState()
     }
@@ -231,6 +280,20 @@ function handleTranscription(audioPath: string): void {
     onError: (error) => {
       isTranscribing = false
       hideOverlay()
+      // Parse error to provide user-friendly message
+      let userError = error
+      if (error.includes('Whisper binary not found')) {
+        userError = '❌ Whisper binary not found. Please ensure main.exe is in the resources/whisper/ folder.'
+      } else if (error.includes('Model not found')) {
+        userError = '❌ Selected model not found. Please download it from Settings.'
+      } else if (error.includes('exited with code')) {
+        userError = '❌ Transcription failed. The whisper process crashed or encountered an error.'
+      } else if (error.includes('Failed to start whisper')) {
+        userError = '❌ Failed to start transcription. Please check your installation.'
+      } else {
+        userError = `❌ Transcription error: ${error}`
+      }
+      showError(userError)
       mainWindow?.webContents.send(IPC_CHANNELS.TRANSCRIPTION_ERROR, error)
       mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false, isTranscribing: false })
     }
