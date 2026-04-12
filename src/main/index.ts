@@ -185,11 +185,15 @@ function handleStartRecording(): void {
     modelId: settings.activeModel,
     language: settings.language,
     onPartial: (text) => {
-      streamedText = text
-      if (settings.overlayEnabled) {
-        updateOverlay(text)
+      if (streamedText) {
+        streamedText += ' ' + text
+      } else {
+        streamedText = text
       }
-      mainWindow?.webContents.send(IPC_CHANNELS.TRANSCRIPTION_PARTIAL, text)
+      if (settings.overlayEnabled) {
+        updateOverlay(streamedText)
+      }
+      mainWindow?.webContents.send(IPC_CHANNELS.TRANSCRIPTION_PARTIAL, streamedText)
     },
     onError: (error) => {
       isRecordingActive = false
