@@ -1,10 +1,9 @@
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, ipcMain, session } from 'electron'
 import * as path from 'path'
 import { spawn, ChildProcess } from 'child_process'
 import * as fs from 'fs'
 import { app } from 'electron'
 
-let recorderProcess: ChildProcess | null = null
 let outputPath: string = ''
 
 function getTempWavPath(): string {
@@ -18,13 +17,20 @@ export interface RecorderOptions {
   onError?: (error: string) => void
 }
 
-// Use a hidden renderer window with Web Audio API to capture microphone
 let captureWindow: BrowserWindow | null = null
 
 export async function startRecording(options: RecorderOptions): Promise<void> {
   outputPath = getTempWavPath()
 
-  // Create a hidden window for audio capture
+  // Auto-grant microphone permission
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    if (permission === 'media') {
+      callback(true)
+    } else {
+      callback(false)
+    }
+  })
+
   captureWindow = new BrowserWindow({
     show: false,
     width: 1,
@@ -36,99 +42,46 @@ export async function startRecording(options: RecorderOptions): Promise<void> {
     }
   })
 
-  const captureHtml = `
-    <!DOCTYPE html>
-    <html><body><script>
-      let mediaRecorder = null;
-      let audioChunks = [];
+  // Remove any previous handlers to avoid "already registered" errors
+  try { ipcMain.removeHandler('audio-data') } catch {}
+  try { ipcMain.removeHandler('recording-started') } catch {}
+  try { ipcMain.removeHandler('recording-error') } catch {}
 
-      async function startCapture() {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              channelCount: 1,
-              sampleRate: 16000
-            }
-          });
-          
-          mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-          audioChunks = [];
-          
-          mediaRecorder.ondataavailable = (e) => {
-            audioChunks.push(e.data);
-          };
-          
-          mediaRecorder.onstop = async () => {
-            const blob = new Blob(audioChunks, { type: 'audio/webm' });
-            const buffer = await blob.arrayBuffer();
-            const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-            
-            // Send audio data back to main process
-            window.electronAPI.sendAudioData(base64);
-            
-            stream.getTracks().forEach(t => t.stop());
-          };
-          
-          mediaRecorder.start(100); // collect data every 100ms
-          window.electronAPI.recordingStarted();
-        } catch (err) {
-          window.electronAPI.recordingError(err.message);
-        }
-      }
-
-      function stopCapture() {
-        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-          mediaRecorder.stop();
-        }
-      }
-
-      // Listen for stop command
-      window.electronAPI.onStopRecording(() => stopCapture());
-      
-      startCapture();
-    </script></body></html>
-  `
-
-  const { ipcMain } = require('electron')
-
-  // Set up one-time listeners for this capture session
-  const audioDataHandler = async (_event: any, base64Data: string) => {
-    // Convert webm to wav using ffmpeg or write raw
+  ipcMain.handle('audio-data', async (_event, base64Data: string) => {
     const buffer = Buffer.from(base64Data, 'base64')
-    fs.writeFileSync(outputPath.replace('.wav', '.webm'), buffer)
-
-    // We need to convert webm to wav for whisper.cpp
-    // For now, save as webm and convert
-    await convertToWav(outputPath.replace('.wav', '.webm'), outputPath)
-    
+    const webmPath = outputPath.replace('.wav', '.webm')
+    fs.writeFileSync(webmPath, buffer)
+    await convertToWav(webmPath, outputPath)
     cleanup()
     options.onStopped?.(outputPath)
-  }
+  })
 
-  const startedHandler = () => {
+  ipcMain.handle('recording-started', () => {
     options.onStarted?.()
-  }
+  })
 
-  const errorHandler = (_event: any, error: string) => {
+  ipcMain.handle('recording-error', (_event, error: string) => {
     cleanup()
     options.onError?.(error)
+  })
+
+  // Load the capture page from the renderer (proper origin → getUserMedia works)
+  const isDev = !app.isPackaged
+  if (isDev && process.env['ELECTRON_RENDERER_URL']) {
+    captureWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/capture.html`)
+  } else {
+    captureWindow.loadFile(path.join(__dirname, '../renderer/capture.html'))
   }
 
   function cleanup() {
-    ipcMain.removeHandler('audio-data')
-    ipcMain.removeHandler('recording-started')
-    ipcMain.removeHandler('recording-error')
+    try { ipcMain.removeHandler('audio-data') } catch {}
+    try { ipcMain.removeHandler('recording-started') } catch {}
+    try { ipcMain.removeHandler('recording-error') } catch {}
     if (captureWindow && !captureWindow.isDestroyed()) {
       captureWindow.close()
     }
     captureWindow = null
   }
-
-  ipcMain.handle('audio-data', audioDataHandler)
-  ipcMain.handle('recording-started', startedHandler)
-  ipcMain.handle('recording-error', errorHandler)
-
-  captureWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(captureHtml)}`)
 }
 
 export function stopRecording(): void {

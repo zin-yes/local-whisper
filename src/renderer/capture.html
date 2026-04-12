@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Audio Capture</title>
+</head>
+<body>
+  <script>
+    let mediaRecorder = null;
+    let audioChunks = [];
+
+    async function startCapture() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: 16000
+          }
+        });
+
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = (e) => {
+          audioChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+          const blob = new Blob(audioChunks, { type: 'audio/webm' });
+          const buffer = await blob.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          let binary = '';
+          for (let i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          const base64 = btoa(binary);
+          window.electronAPI.sendAudioData(base64);
+          stream.getTracks().forEach(t => t.stop());
+        };
+
+        mediaRecorder.start(100);
+        window.electronAPI.recordingStarted();
+      } catch (err) {
+        window.electronAPI.recordingError(err.message);
+      }
+    }
+
+    function stopCapture() {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
+    }
+
+    window.electronAPI.onStopRecording(() => stopCapture());
+    startCapture();
+  </script>
+</body>
+</html>
