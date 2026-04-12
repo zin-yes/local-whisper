@@ -3,8 +3,7 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { getSettings, setSettings, getHistory, addToHistory, clearHistory } from './store'
 import { registerHotkey, unregisterHotkey, resetRecordingState } from './hotkey'
-import { startRecording, stopRecording, cleanupTempFiles } from './recorder'
-import { transcribe, cancelTranscription, isModelDownloaded, getDownloadedModels } from './whisper'
+import { startStream, stopStream, isStreamBinaryAvailable, isCliBinaryAvailable, isModelDownloaded, getDownloadedModels, cancelTranscription } from './whisper'
 import { listModels, downloadModel, deleteModel } from './models'
 import { createOverlayWindow, showOverlay, updateOverlay, hideOverlay } from './overlay'
 import { injectText } from './injector'
@@ -12,15 +11,9 @@ import { IPC_CHANNELS, AppStatus, TranscriptionResult } from '../shared/types'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
-let isTranscribing = false
-
-function getWhisperBinaryPath(): string {
-  const isDev = !app.isPackaged
-  if (isDev) {
-    return path.join(app.getAppPath(), 'resources', 'whisper', 'whisper-cli.exe')
-  }
-  return path.join(process.resourcesPath, 'whisper', 'whisper-cli.exe')
-}
+let isRecordingActive = false
+let streamedText = ''
+let recordingStartTime = 0
 
 function showError(error: string): void {
   console.error(`[main] Error: ${error}`)
@@ -55,7 +48,6 @@ function createMainWindow(): BrowserWindow {
   })
 
   mainWindow.on('close', (event) => {
-    // Minimize to tray instead of closing
     event.preventDefault()
     mainWindow?.hide()
   })
@@ -70,7 +62,6 @@ function createMainWindow(): BrowserWindow {
 }
 
 function createTray(): void {
-  // Create a simple tray icon (16x16 blue circle)
   const icon = nativeImage.createEmpty()
   tray = new Tray(icon)
 
@@ -106,18 +97,15 @@ function createTray(): void {
 }
 
 function setupIPC(): void {
-  // Settings
   ipcMain.handle(IPC_CHANNELS.GET_SETTINGS, () => getSettings())
   ipcMain.handle(IPC_CHANNELS.SET_SETTINGS, (_event, settings) => {
     const updated = setSettings(settings)
-    // Re-register hotkey with new settings
     unregisterHotkey()
     setupHotkey()
     mainWindow?.webContents.send(IPC_CHANNELS.SETTINGS_CHANGED, updated)
     return updated
   })
 
-  // Models
   ipcMain.handle(IPC_CHANNELS.LIST_MODELS, () => listModels())
   ipcMain.handle(IPC_CHANNELS.DOWNLOAD_MODEL, async (_event, modelId: string) => {
     try {
@@ -136,26 +124,22 @@ function setupIPC(): void {
     return modelId
   })
 
-  // History
   ipcMain.handle(IPC_CHANNELS.GET_HISTORY, () => getHistory())
   ipcMain.handle(IPC_CHANNELS.CLEAR_HISTORY, () => {
     clearHistory()
     return true
   })
 
-  // App status
   ipcMain.handle(IPC_CHANNELS.GET_APP_STATUS, (): AppStatus => ({
-    isRecording: false, // Will be updated by recording flow
-    isTranscribing,
+    isRecording: isRecordingActive,
+    isTranscribing: false,
     activeModel: getSettings().activeModel,
     modelsDownloaded: getDownloadedModels()
   }))
 
-  // Manual recording controls (from UI)
   ipcMain.handle(IPC_CHANNELS.START_RECORDING, () => handleStartRecording())
   ipcMain.handle(IPC_CHANNELS.STOP_RECORDING, () => handleStopRecording())
 
-  // App controls
   ipcMain.handle(IPC_CHANNELS.QUIT_APP, () => {
     mainWindow?.destroy()
     app.quit()
@@ -169,29 +153,27 @@ function setupIPC(): void {
 function handleStartRecording(): void {
   const settings = getSettings()
 
-  // Validate whisper binary exists
-  const binaryPath = getWhisperBinaryPath()
-  if (!fs.existsSync(binaryPath)) {
-    const error = `❌ Whisper binary not found. Please ensure whisper-cli.exe is in the resources/whisper/ folder. Expected at: ${binaryPath}`
-    showError(error)
-    mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
+  if (!isStreamBinaryAvailable()) {
+    showError('❌ whisper-stream.exe not found in resources/whisper/. Please check your installation.')
+    resetRecordingState()
     return
   }
 
-  // Validate a model is selected and downloaded
   if (!settings.activeModel) {
-    const error = '❌ No model selected. Please download and select a model in Settings.'
-    showError(error)
-    mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
+    showError('❌ No model selected. Please download and select a model in Settings.')
+    resetRecordingState()
     return
   }
 
   if (!isModelDownloaded(settings.activeModel)) {
-    const error = `❌ Model "${settings.activeModel}" is not downloaded. Please download it from Settings before recording.`
-    showError(error)
-    mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
+    showError(`❌ Model "${settings.activeModel}" is not downloaded. Please download it from Settings.`)
+    resetRecordingState()
     return
   }
+
+  isRecordingActive = true
+  streamedText = ''
+  recordingStartTime = Date.now()
 
   mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: true })
 
@@ -199,105 +181,54 @@ function handleStartRecording(): void {
     showOverlay('🎙️ Listening...')
   }
 
-  startRecording({
-    onStarted: () => {
-      console.log('[main] Recording started')
-    },
-    onStopped: (filePath) => {
-      console.log(`[main] Recording stopped, file: ${filePath}`)
-      handleTranscription(filePath)
-    },
-    onError: (error) => {
-      console.error(`[main] Recording error: ${error}`)
-      hideOverlay()
-      // Parse error to provide user-friendly message
-      let userError = error
-      if (error.includes('NotAllowedError') || error.includes('Permission denied')) {
-        userError = '❌ Microphone access denied. Please enable microphone permissions in your system settings.'
-      } else if (error.includes('NotFoundError') || error.includes('no device')) {
-        userError = '❌ No microphone found. Please connect a microphone and try again.'
-      } else if (error.includes('ffmpeg')) {
-        userError = '❌ Audio conversion failed. Please install ffmpeg to use this app: https://ffmpeg.org/download.html'
-      } else {
-        userError = `❌ Recording error: ${error}`
-      }
-      showError(userError)
-      mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
-      resetRecordingState()
-    }
-  })
-}
-
-function handleStopRecording(): void {
-  stopRecording()
-  mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
-}
-
-function handleTranscription(audioPath: string): void {
-  const settings = getSettings()
-  isTranscribing = true
-
-  if (settings.overlayEnabled) {
-    updateOverlay('⏳ Transcribing...')
-  }
-
-  mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false, isTranscribing: true })
-
-  const startTime = Date.now()
-
-  transcribe({
-    audioPath,
+  startStream({
     modelId: settings.activeModel,
     language: settings.language,
     onPartial: (text) => {
+      streamedText = text
       if (settings.overlayEnabled) {
         updateOverlay(text)
       }
       mainWindow?.webContents.send(IPC_CHANNELS.TRANSCRIPTION_PARTIAL, text)
     },
-    onComplete: async (text) => {
-      isTranscribing = false
-      hideOverlay()
-
-      if (text.trim()) {
-        // Inject text into focused field
-        await injectText(text.trim())
-
-        // Save to history
-        const result: TranscriptionResult = {
-          text: text.trim(),
-          timestamp: Date.now(),
-          duration: Date.now() - startTime,
-          model: settings.activeModel
-        }
-        addToHistory(result)
-
-        mainWindow?.webContents.send(IPC_CHANNELS.TRANSCRIPTION_COMPLETE, result)
-      }
-
-      mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false, isTranscribing: false })
-    },
     onError: (error) => {
-      isTranscribing = false
+      isRecordingActive = false
       hideOverlay()
-      // Parse error to provide user-friendly message
-      let userError = error
-      if (error.includes('Whisper binary not found')) {
-        userError = '❌ Whisper binary not found. Please ensure whisper-cli.exe is in the resources/whisper/ folder.'
-      } else if (error.includes('Model not found')) {
-        userError = '❌ Selected model not found. Please download it from Settings.'
-      } else if (error.includes('exited with code')) {
-        userError = '❌ Transcription failed. The whisper process crashed or encountered an error.'
-      } else if (error.includes('Failed to start whisper')) {
-        userError = '❌ Failed to start transcription. Please check your installation.'
-      } else {
-        userError = `❌ Transcription error: ${error}`
-      }
-      showError(userError)
-      mainWindow?.webContents.send(IPC_CHANNELS.TRANSCRIPTION_ERROR, error)
-      mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false, isTranscribing: false })
+      showError(`❌ ${error}`)
+      mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
+      resetRecordingState()
     }
   })
+
+  console.log('[main] Streaming transcription started')
+}
+
+async function handleStopRecording(): Promise<void> {
+  if (!isRecordingActive) return
+
+  isRecordingActive = false
+  stopStream()
+  hideOverlay()
+
+  mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
+
+  const finalText = streamedText.trim()
+  console.log(`[main] Streaming stopped. Text: "${finalText}"`)
+
+  if (finalText) {
+    await injectText(finalText)
+
+    const result: TranscriptionResult = {
+      text: finalText,
+      timestamp: Date.now(),
+      duration: Date.now() - recordingStartTime,
+      model: getSettings().activeModel
+    }
+    addToHistory(result)
+    mainWindow?.webContents.send(IPC_CHANNELS.TRANSCRIPTION_COMPLETE, result)
+  }
+
+  streamedText = ''
 }
 
 function setupHotkey(): void {
@@ -310,7 +241,6 @@ function setupHotkey(): void {
   })
 }
 
-// App lifecycle
 app.whenReady().then(() => {
   createMainWindow()
   createTray()
@@ -321,14 +251,12 @@ app.whenReady().then(() => {
   console.log('[main] Local Whisper started')
 })
 
-app.on('window-all-closed', () => {
-  // Don't quit on Windows when all windows closed (tray app)
-})
+app.on('window-all-closed', () => {})
 
 app.on('before-quit', () => {
   unregisterHotkey()
+  stopStream()
   cancelTranscription()
-  cleanupTempFiles()
   mainWindow?.destroy()
 })
 
