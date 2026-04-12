@@ -62,8 +62,9 @@ export function transcribe(options: TranscribeOptions): void {
     '-m', modelPath,
     '-f', audioPath,
     '--no-timestamps',
-    '--print-realtime',
-    '-t', '4' // threads
+    '--print-progress',
+    '-np',
+    '-t', '4'
   ]
 
   if (language && language !== 'auto') {
@@ -85,8 +86,11 @@ export function transcribe(options: TranscribeOptions): void {
 
   whisperProcess.stderr?.on('data', (data: Buffer) => {
     const msg = data.toString()
-    // whisper.cpp logs progress to stderr, only report actual errors
-    if (msg.includes('error') || msg.includes('failed')) {
+    // Parse progress percentage for overlay
+    const progressMatch = msg.match(/progress\s*=\s*(\d+)%/)
+    if (progressMatch) {
+      onPartial?.(`⏳ Transcribing... ${progressMatch[1]}%`)
+    } else if (msg.includes('error') || msg.includes('failed')) {
       console.error(`[whisper] Error: ${msg}`)
     }
   })
