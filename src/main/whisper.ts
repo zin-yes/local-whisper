@@ -73,11 +73,18 @@ export function startStream(options: StreamOptions): void {
     return
   }
 
+  // Adjust streaming parameters based on model size
+  // Larger models need longer step intervals to keep up with real-time
+  const isLargeModel = modelId.includes('large') || modelId.includes('medium')
+  const step = isLargeModel ? '4000' : '2000'
+  const length = isLargeModel ? '8000' : '5000'
+  const threads = isLargeModel ? '8' : '4'
+
   const args = [
     '-m', modelPath,
-    '-t', '4',
-    '--step', '2000',
-    '--length', '5000',
+    '-t', threads,
+    '--step', step,
+    '--length', length,
     '--keep', '500',
     '--keep-context',
     '--vad-thold', '0.5'
@@ -96,13 +103,16 @@ export function startStream(options: StreamOptions): void {
   whisperProcess.stdout?.on('data', (data: Buffer) => {
     const raw = data.toString()
     // Strip all ANSI escape sequences (cursor moves, erase line, colors, etc.)
-    const stripped = raw.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/\r/g, '')
-    const lines = stripped.split('\n')
+    const stripped = raw.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+    // whisper-stream uses \r to overwrite lines, split on both \r and \n
+    const lines = stripped.split(/[\r\n]+/)
     for (const line of lines) {
       // Strip whisper timestamp brackets like [00:00:00.000 --> 00:00:05.000]
       const cleaned = line.replace(/\[[\d:.]+\s*-->\s*[\d:.]+\]/g, '').trim()
       if (!cleaned) continue
+      // Filter out status messages and init noise
       if (cleaned.startsWith('whisper_') || cleaned.startsWith('main:') || cleaned.startsWith('init:')) continue
+      if (cleaned === '[Start speaking]' || cleaned === '[silence]') continue
       // whisper-stream rewrites the current line — treat each output as the full current text
       fullText = cleaned
       onPartial?.(fullText)
@@ -111,9 +121,7 @@ export function startStream(options: StreamOptions): void {
 
   whisperProcess.stderr?.on('data', (data: Buffer) => {
     const msg = data.toString()
-    if (msg.includes('error') || msg.includes('failed')) {
-      console.error(`[whisper-stream] Error: ${msg}`)
-    }
+    console.log(`[whisper-stream] stderr: ${msg.trim()}`)
   })
 
   whisperProcess.on('error', (err) => {
