@@ -1,0 +1,6 @@
+node_modules/
+out/
+dist/
+resources/whisper/main.exe
+resources/whisper/models/*.bin
+*.tmp
