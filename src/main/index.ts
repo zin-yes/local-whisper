@@ -185,11 +185,7 @@ function handleStartRecording(): void {
     modelId: settings.activeModel,
     language: settings.language,
     onPartial: (text) => {
-      if (streamedText) {
-        streamedText += ' ' + text
-      } else {
-        streamedText = text
-      }
+      streamedText = text
       if (settings.overlayEnabled) {
         updateOverlay(streamedText)
       }

@@ -91,13 +91,21 @@ export function startStream(options: StreamOptions): void {
 
   whisperProcess = spawn(binaryPath, args)
 
+  let fullText = ''
+
   whisperProcess.stdout?.on('data', (data: Buffer) => {
-    const lines = data.toString().split('\n')
+    const raw = data.toString()
+    // Strip all ANSI escape sequences (cursor moves, erase line, colors, etc.)
+    const stripped = raw.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/\r/g, '')
+    const lines = stripped.split('\n')
     for (const line of lines) {
-      const cleaned = line.replace(/\[.*?\]/g, '').trim()
-      if (cleaned && !cleaned.startsWith('whisper_') && !cleaned.startsWith('main:') && !cleaned.startsWith('init:')) {
-        onPartial?.(cleaned)
-      }
+      // Strip whisper timestamp brackets like [00:00:00.000 --> 00:00:05.000]
+      const cleaned = line.replace(/\[[\d:.]+\s*-->\s*[\d:.]+\]/g, '').trim()
+      if (!cleaned) continue
+      if (cleaned.startsWith('whisper_') || cleaned.startsWith('main:') || cleaned.startsWith('init:')) continue
+      // whisper-stream rewrites the current line — treat each output as the full current text
+      fullText = cleaned
+      onPartial?.(fullText)
     }
   })
 
