@@ -97,11 +97,11 @@ export function startStream(options: StreamOptions): void {
   const args = [
     '-m', modelPath,
     '-t', '4',
-    '--step', '5000',
-    '--length', '12000',
-    '--keep', '3000',
+    '--step', '2000',
+    '--length', '5000',
+    '--keep', '1000',
     '--keep-context',
-    '--vad-thold', '0.3'
+    '--vad-thold', '0.2'
   ]
 
   if (language && language !== 'auto') {
