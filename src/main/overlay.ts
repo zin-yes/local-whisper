@@ -12,7 +12,7 @@ export function createOverlayWindow(): BrowserWindow {
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
 
   const overlayWidth = 600
-  const overlayHeight = 80
+  const overlayHeight = 160
 
   overlayWindow = new BrowserWindow({
     width: overlayWidth,

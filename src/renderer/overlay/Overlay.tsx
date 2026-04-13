@@ -103,8 +103,8 @@ export default function Overlay() {
           backdrop-filter: blur(20px);
           animation: fadeIn 0.2s ease-out;
           overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+          word-break: break-word;
+          white-space: normal;
         }
         .shimmer-text {
           background: linear-gradient(
