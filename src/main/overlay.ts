@@ -3,22 +3,32 @@ import * as path from 'path'
 let overlayWindow: BrowserWindow | null = null
 const isDev = !require('electron').app.isPackaged
 
+const OVERLAY_WIDTH = 600
+const OVERLAY_HEIGHT = 160
+
+function getOverlayPositionForCursor(): { x: number; y: number } {
+  const cursorPoint = screen.getCursorScreenPoint()
+  const display = screen.getDisplayNearestPoint(cursorPoint)
+  const { x: dx, y: dy } = display.workArea
+  const { width: dw, height: dh } = display.workAreaSize
+  return {
+    x: Math.round(dx + (dw - OVERLAY_WIDTH) / 2),
+    y: dy + dh - OVERLAY_HEIGHT - 40
+  }
+}
+
 export function createOverlayWindow(): BrowserWindow {
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     return overlayWindow
   }
 
-  const primaryDisplay = screen.getPrimaryDisplay()
-  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
-
-  const overlayWidth = 600
-  const overlayHeight = 160
+  const { x, y } = getOverlayPositionForCursor()
 
   overlayWindow = new BrowserWindow({
-    width: overlayWidth,
-    height: overlayHeight,
-    x: Math.round((screenWidth - overlayWidth) / 2),
-    y: screenHeight - overlayHeight - 40,
+    width: OVERLAY_WIDTH,
+    height: OVERLAY_HEIGHT,
+    x,
+    y,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -54,6 +64,8 @@ export function showOverlay(text?: string): void {
   }
   
   if (overlayWindow) {
+    const { x, y } = getOverlayPositionForCursor()
+    overlayWindow.setBounds({ x, y, width: OVERLAY_WIDTH, height: OVERLAY_HEIGHT })
     if (text) {
       overlayWindow.webContents.send('overlay:update', text)
     }
