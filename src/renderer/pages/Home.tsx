@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  Mic, Square, Copy, Check, X, Clock, Package,
+  AlertTriangle, CheckCircle2, Loader2, Trash2
+} from 'lucide-react'
 import type { ElectronAPI } from '../../preload/index'
 import type { TranscriptionResult, AppStatus } from '../../shared/types'
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
+import { Button } from '../components/ui/button'
+import { Badge } from '../components/ui/badge'
 
 declare global {
   interface Window {
@@ -16,13 +24,12 @@ export default function Home() {
   const [history, setHistory] = useState<TranscriptionResult[]>([])
   const [error, setError] = useState<string | null>(null)
   const [errorKey, setErrorKey] = useState(0)
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
 
   useEffect(() => {
-    // Load initial data
     window.electronAPI.getAppStatus().then(setStatus)
     window.electronAPI.getHistory().then(setHistory)
 
-    // Subscribe to events
     const unsubs = [
       window.electronAPI.onRecordingStatus((s) => {
         setIsRecording(s.isRecording)
@@ -42,10 +49,7 @@ export default function Home() {
       window.electronAPI.onError((error) => {
         setError(error)
         setErrorKey(k => k + 1)
-        // Auto-dismiss error after 8 seconds
-        setTimeout(() => {
-          setError(null)
-        }, 8000)
+        setTimeout(() => setError(null), 8000)
       })
     ]
 
@@ -65,142 +69,204 @@ export default function Home() {
     setHistory([])
   }
 
-  const formatTime = (timestamp: number) => {
-    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const handleCopy = (text: string, index: number) => {
+    navigator.clipboard.writeText(text)
+    setCopiedIndex(index)
+    setTimeout(() => setCopiedIndex(null), 2000)
   }
 
-  const formatDuration = (ms: number) => {
-    const seconds = Math.round(ms / 1000)
-    return `${seconds}s`
-  }
+  const formatTime = (timestamp: number) =>
+    new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+  const formatDuration = (ms: number) => `${Math.round(ms / 1000)}s`
+
+  const ready = !!status?.modelsDownloaded?.length
 
   return (
-    <div>
-      <h2 className="page-title">Home</h2>
+    <div className="space-y-4 max-w-2xl">
+      <h2 className="text-xl font-semibold tracking-tight">Home</h2>
 
       {/* Error banner */}
-      {error && (
-        <div key={errorKey} className="error-banner">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-            <div style={{ flex: 1, fontSize: '14px', lineHeight: '1.5' }}>
-              {error}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            key={errorKey}
+            initial={{ opacity: 0, y: -8, height: 0 }}
+            animate={{ opacity: 1, y: 0, height: 'auto' }}
+            exit={{ opacity: 0, y: -8, height: 0 }}
+            className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-destructive text-sm overflow-hidden"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span className="leading-relaxed">{error}</span>
+              </div>
+              <button
+                onClick={() => setError(null)}
+                className="text-destructive/60 hover:text-destructive transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
-            <button
-              onClick={() => setError(null)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--text-secondary)',
-                cursor: 'pointer',
-                padding: '2px',
-                fontSize: '16px',
-                minWidth: '20px',
-                minHeight: '20px'
-              }}
-              title="Dismiss"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Status card */}
-      <div className="card">
-        <div className="card-title">Status</div>
-        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-          <span className={`badge ${status?.modelsDownloaded?.length ? 'badge-success' : 'badge-warning'}`}>
-            {status?.modelsDownloaded?.length ? '● Ready' : '⚠ No models'}
-          </span>
-          <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-            Model: <strong>{status?.activeModel || 'None'}</strong>
-          </span>
-        </div>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Status</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-4">
+            <Badge variant={ready ? 'success' : 'warning'}>
+              {ready ? (
+                <><CheckCircle2 className="h-3 w-3" /> Ready</>
+              ) : (
+                <><AlertTriangle className="h-3 w-3" /> No models</>
+              )}
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              Model: <strong className="text-foreground">{status?.activeModel || 'None'}</strong>
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Recording control */}
-      <div className="card">
-        <div className="card-title">Recording</div>
-        
-        {isRecording && (
-          <div className="recording-indicator">
-            <div className="recording-dot" />
-            <span style={{ fontSize: '14px', color: 'var(--danger)' }}>Recording...</span>
-          </div>
-        )}
+      <Card>
+        <CardHeader>
+          <CardTitle>Recording</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <AnimatePresence>
+            {isRecording && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="flex items-center gap-2.5 p-3 rounded-lg bg-destructive/10">
+                  <div className="h-2.5 w-2.5 rounded-full bg-destructive recording-dot" />
+                  <span className="text-sm text-destructive font-medium">Recording...</span>
+                </div>
+              </motion.div>
+            )}
 
-        {isTranscribing && (
-          <div className="recording-indicator" style={{ background: 'rgba(108, 92, 231, 0.1)' }}>
-            <span style={{ fontSize: '14px', color: 'var(--accent)' }}>⏳ Transcribing...</span>
-          </div>
-        )}
+            {isTranscribing && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="flex items-center gap-2.5 p-3 rounded-lg bg-muted">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground font-medium">Transcribing...</span>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-        {partialText && (
-          <div style={{
-            padding: '12px',
-            background: 'var(--bg-tertiary)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: '14px',
-            lineHeight: '1.5',
-            marginBottom: '12px',
-            color: 'var(--text-secondary)',
-            fontStyle: 'italic'
-          }}>
-            {partialText}
-          </div>
-        )}
+          <AnimatePresence>
+            {partialText && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="p-3 bg-muted rounded-lg text-sm leading-relaxed text-muted-foreground italic"
+              >
+                {partialText}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-        <button
-          className={`btn ${isRecording ? 'btn-danger' : 'btn-primary'}`}
-          onClick={handleToggleRecording}
-          disabled={isTranscribing}
-        >
-          {isRecording ? '⏹ Stop Recording' : '🎙️ Start Recording'}
-        </button>
-        <span style={{ marginLeft: '12px', fontSize: '12px', color: 'var(--text-muted)' }}>
-          or use hotkey (Ctrl+Shift+Space)
-        </span>
-      </div>
+          <div className="flex items-center gap-3">
+            <Button
+              variant={isRecording ? 'destructive' : 'default'}
+              onClick={handleToggleRecording}
+              disabled={isTranscribing}
+            >
+              {isRecording ? (
+                <><Square className="h-4 w-4" /> Stop Recording</>
+              ) : (
+                <><Mic className="h-4 w-4" /> Start Recording</>
+              )}
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              or press <kbd className="inline-flex items-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium">Ctrl+Shift+Space</kbd>
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* History */}
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <div className="card-title" style={{ margin: 0 }}>Transcription History</div>
-          {history.length > 0 && (
-            <button className="btn btn-secondary btn-sm" onClick={handleClearHistory}>
-              Clear
-            </button>
-          )}
-        </div>
-
-        {history.length === 0 ? (
-          <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-            No transcriptions yet. Use the hotkey or button to start recording.
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Transcription History</CardTitle>
+            {history.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={handleClearHistory}>
+                <Trash2 className="h-3.5 w-3.5" />
+                Clear
+              </Button>
+            )}
           </div>
-        ) : (
-          history.map((item, i) => (
-            <div key={i} className="history-item">
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                <div className="history-text" style={{ flex: 1 }}>{item.text}</div>
-                <button
-                  className="btn-copy"
-                  title="Copy to clipboard"
-                  onClick={() => {
-                    navigator.clipboard.writeText(item.text)
-                  }}
-                >
-                  📋
-                </button>
-              </div>
-              <div className="history-meta">
-                <span>{formatTime(item.timestamp)}</span>
-                <span>⏱ {formatDuration(item.duration)}</span>
-                <span>📦 {item.model}</span>
-              </div>
+        </CardHeader>
+        <CardContent>
+          {history.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              No transcriptions yet. Use the hotkey or button to start recording.
             </div>
-          ))
-        )}
-      </div>
+          ) : (
+            <div className="divide-y divide-border">
+              <AnimatePresence initial={false}>
+                {history.map((item, i) => (
+                  <motion.div
+                    key={`${item.timestamp}-${i}`}
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="py-3 group">
+                      <div className="flex items-start gap-2">
+                        <p className="flex-1 text-sm leading-relaxed">{item.text}</p>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => handleCopy(item.text, i)}
+                          title="Copy to clipboard"
+                        >
+                          {copiedIndex === i ? (
+                            <Check className="h-3.5 w-3.5 text-emerald-500" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {formatTime(item.timestamp)}
+                        </span>
+                        <span>{formatDuration(item.duration)}</span>
+                        <span className="flex items-center gap-1">
+                          <Package className="h-3 w-3" />
+                          {item.model}
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

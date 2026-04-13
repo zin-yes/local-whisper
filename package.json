@@ -19,8 +19,14 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "clsx": "^2.1.1",
     "electron-store": "^8.2.0",
+    "framer-motion": "^12.38.0",
+    "lucide-react": "^1.8.0",
     "node-global-key-listener": "^0.3.0",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^4.2.2",
     "uiohook-napi": "^1.5.5"
   },
   "devDependencies": {

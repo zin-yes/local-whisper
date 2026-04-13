@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, nativeTheme } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { getSettings, setSettings, getHistory, addToHistory, clearHistory } from './store'
@@ -21,6 +21,16 @@ let isBatchMode = false
 let streamedText = ''
 let recordingStartTime = 0
 
+function updateTitleBarTheme(): void {
+  if (!mainWindow) return
+  const dark = nativeTheme.shouldUseDarkColors
+  mainWindow.setTitleBarOverlay({
+    color: dark ? '#1a1a1a' : '#ffffff',
+    symbolColor: dark ? '#e0e0e0' : '#1a1a1a',
+  })
+  mainWindow.setBackgroundColor(dark ? '#1a1a1a' : '#ffffff')
+}
+
 function showError(error: string): void {
   console.error(`[main] Error: ${error}`)
   mainWindow?.webContents.send(IPC_CHANNELS.SHOW_ERROR, error)
@@ -35,11 +45,11 @@ function createMainWindow(): BrowserWindow {
     frame: false,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: '#1a1a2e',
-      symbolColor: '#e0e0e0',
+      color: '#ffffff',
+      symbolColor: '#1a1a1a',
       height: 36
     },
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#ffffff',
     show: false,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -50,6 +60,7 @@ function createMainWindow(): BrowserWindow {
   })
 
   mainWindow.on('ready-to-show', () => {
+    updateTitleBarTheme()
     mainWindow?.show()
   })
 
@@ -164,13 +175,13 @@ function handleStartRecording(): void {
   const settings = getSettings()
 
   if (!settings.activeModel) {
-    showError('❌ No model selected. Please download and select a model in Settings.')
+    showError('No model selected. Please download and select a model in Settings.')
     resetRecordingState()
     return
   }
 
   if (!isModelDownloaded(settings.activeModel)) {
-    showError(`❌ Model "${settings.activeModel}" is not downloaded. Please download it from Settings.`)
+    showError(`Model "${settings.activeModel}" is not downloaded. Please download it from Settings.`)
     resetRecordingState()
     return
   }
@@ -187,7 +198,7 @@ function handleStartRecording(): void {
   const canBatch = isCliBinaryAvailable()
 
   if (!canBatch) {
-    showError('❌ whisper-cli.exe not found in resources/whisper/.')
+    showError('whisper-cli.exe not found in resources/whisper/.')
     resetRecordingState()
     isRecordingActive = false
     return
@@ -199,7 +210,7 @@ function handleStartRecording(): void {
     console.log(`[main] Using hybrid mode: live stream with "${liveModelId}", final pass with "${settings.activeModel}"`)
 
     if (settings.overlayEnabled) {
-      showOverlay('🎙️ Listening...')
+      showOverlay('Listening...')
     }
 
     // Start live streaming with tiny model for real-time preview
@@ -209,7 +220,7 @@ function handleStartRecording(): void {
       onPartial: (fullTranscript) => {
         streamedText = fullTranscript
         if (settings.overlayEnabled) {
-          updateOverlay(fullTranscript || '🎙️ Listening...')
+          updateOverlay(fullTranscript || 'Listening...')
         }
         mainWindow?.webContents.send(IPC_CHANNELS.TRANSCRIPTION_PARTIAL, fullTranscript)
       },
@@ -220,7 +231,7 @@ function handleStartRecording(): void {
   } else {
     console.log(`[main] No tiny model for live preview, recording only. Final pass with "${settings.activeModel}"`)
     if (settings.overlayEnabled) {
-      showOverlay('🎙️ Recording... (will transcribe after)')
+      showOverlay('Recording... (will transcribe after)')
     }
   }
 
@@ -239,7 +250,7 @@ function handleStartRecording(): void {
       isBatchMode = false
       stopStream()
       hideOverlay()
-      showError(`❌ Recording error: ${error}`)
+      showError(`Recording error: ${error}`)
       mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
       resetRecordingState()
     }
@@ -257,7 +268,7 @@ async function handleStopRecording(): Promise<void> {
   // Stop recording — triggers file save → batch transcription pipeline
   stopRecording()
   if (getSettings().overlayEnabled) {
-    updateOverlay('⏳ Transcribing...')
+    updateOverlay('Transcribing...')
   }
   streamedText = ''
 }
@@ -266,7 +277,7 @@ function handleBatchTranscription(audioPath: string): void {
   const settings = getSettings()
 
   if (settings.overlayEnabled) {
-    updateOverlay('⏳ Transcribing...')
+    updateOverlay('Transcribing...')
   }
 
   transcribe({
@@ -304,7 +315,7 @@ function handleBatchTranscription(audioPath: string): void {
     onError: (error) => {
       isBatchMode = false
       hideOverlay()
-      showError(`❌ Transcription error: ${error}`)
+      showError(`Transcription error: ${error}`)
       mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false, isTranscribing: false })
     }
   })
@@ -326,6 +337,8 @@ app.whenReady().then(() => {
   createOverlayWindow()
   setupIPC()
   setupHotkey()
+
+  nativeTheme.on('updated', () => updateTitleBarTheme())
 
   console.log('[main] Local Whisper started')
 })
