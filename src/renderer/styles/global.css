@@ -6,27 +6,38 @@
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
+  --card: oklch(0.985 0 0);
   --card-foreground: oklch(0.145 0 0);
   --muted: oklch(0.955 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --border: oklch(0.885 0 0);
+  --muted-foreground: oklch(0.45 0 0);
+  --border: oklch(0.87 0 0);
   --ring: oklch(0.708 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --radius: 0.625rem;
 }
 
 /* ── Dark theme ── */
 .dark {
   --background: oklch(0.1 0 0);
   --foreground: oklch(0.935 0 0);
-  --card: oklch(0.13 0 0);
+  --card: oklch(0.14 0 0);
   --card-foreground: oklch(0.935 0 0);
   --muted: oklch(0.2 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  --muted-foreground: oklch(0.55 0 0);
   --border: oklch(0.25 0 0);
   --ring: oklch(0.4 0 0);
   --destructive: oklch(0.577 0.245 27.325);
+}
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
 }
 
 * {
