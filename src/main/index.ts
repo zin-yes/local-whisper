@@ -5,7 +5,7 @@ import { getSettings, setSettings, getHistory, addToHistory, clearHistory } from
 import { registerHotkey, unregisterHotkey, resetRecordingState } from './hotkey'
 import {
   startStream, stopStream, transcribe,
-  isStreamBinaryAvailable, isCliBinaryAvailable, isHeavyModel,
+  isStreamBinaryAvailable, isCliBinaryAvailable,
   isModelDownloaded, getDownloadedModels, cancelTranscription, getLiveModelId
 } from './whisper'
 import { startRecording, stopRecording, cleanupTempFiles } from './recorder'
@@ -181,22 +181,28 @@ function handleStartRecording(): void {
 
   mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: true })
 
-  const heavy = isHeavyModel(settings.activeModel)
-  const liveModelId = heavy ? getLiveModelId() : null
-  // Hybrid mode: stream with a small model for live preview + record audio for final large-model pass
-  const useHybrid = heavy && liveModelId && isStreamBinaryAvailable() && isCliBinaryAvailable()
-  // Pure batch mode: no small model available or no stream binary
-  const useBatch = heavy && !useHybrid
+  // Always use hybrid mode: live stream with tiny for preview + record audio for final batch pass
+  const liveModelId = getLiveModelId()
+  const canStream = liveModelId && isStreamBinaryAvailable()
+  const canBatch = isCliBinaryAvailable()
 
-  if (useHybrid) {
-    isBatchMode = true
+  if (!canBatch) {
+    showError('❌ whisper-cli.exe not found in resources/whisper/.')
+    resetRecordingState()
+    isRecordingActive = false
+    return
+  }
+
+  isBatchMode = true
+
+  if (canStream) {
     console.log(`[main] Using hybrid mode: live stream with "${liveModelId}", final pass with "${settings.activeModel}"`)
 
     if (settings.overlayEnabled) {
       showOverlay('🎙️ Listening...')
     }
 
-    // Start live streaming with the lightweight model
+    // Start live streaming with tiny model for real-time preview
     startStream({
       modelId: liveModelId,
       language: settings.language,
@@ -211,88 +217,33 @@ function handleStartRecording(): void {
         console.error(`[main] Live stream error: ${error}`)
       }
     })
-
-    // Simultaneously record audio for the final large-model transcription
-    startRecording({
-      onStarted: () => {
-        console.log('[main] Recording started (hybrid mode)')
-      },
-      onStopped: (filePath) => {
-        console.log(`[main] Recording stopped, file: ${filePath}`)
-        handleBatchTranscription(filePath)
-      },
-      onError: (error) => {
-        console.error(`[main] Recording error: ${error}`)
-        isRecordingActive = false
-        isBatchMode = false
-        hideOverlay()
-        showError(`❌ Recording error: ${error}`)
-        mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
-        resetRecordingState()
-      }
-    })
-  } else if (useBatch) {
-    isBatchMode = true
-    console.log(`[main] Using batch mode for model "${settings.activeModel}"`)
-
-    if (!isCliBinaryAvailable()) {
-      showError('❌ whisper-cli.exe not found in resources/whisper/.')
-      resetRecordingState()
-      isRecordingActive = false
-      return
-    }
-
+  } else {
+    console.log(`[main] No tiny model for live preview, recording only. Final pass with "${settings.activeModel}"`)
     if (settings.overlayEnabled) {
       showOverlay('🎙️ Recording... (will transcribe after)')
     }
-
-    startRecording({
-      onStarted: () => {
-        console.log('[main] Recording started (batch mode)')
-      },
-      onStopped: (filePath) => {
-        console.log(`[main] Recording stopped, file: ${filePath}`)
-        handleBatchTranscription(filePath)
-      },
-      onError: (error) => {
-        console.error(`[main] Recording error: ${error}`)
-        isRecordingActive = false
-        isBatchMode = false
-        hideOverlay()
-        showError(`❌ Recording error: ${error}`)
-        mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
-        resetRecordingState()
-      }
-    })
-  } else {
-    isBatchMode = false
-    console.log(`[main] Using streaming mode for model "${settings.activeModel}"`)
-
-    if (settings.overlayEnabled) {
-      showOverlay('🎙️ Listening...')
-    }
-
-    startStream({
-      modelId: settings.activeModel,
-      language: settings.language,
-      onPartial: (fullTranscript) => {
-        streamedText = fullTranscript
-        if (settings.overlayEnabled) {
-          updateOverlay(fullTranscript || '🎙️ Listening...')
-        }
-        mainWindow?.webContents.send(IPC_CHANNELS.TRANSCRIPTION_PARTIAL, fullTranscript)
-      },
-      onError: (error) => {
-        isRecordingActive = false
-        hideOverlay()
-        showError(`❌ ${error}`)
-        mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
-        resetRecordingState()
-      }
-    })
-
-    console.log('[main] Streaming transcription started')
   }
+
+  // Always record audio for the final batch transcription with the selected model
+  startRecording({
+    onStarted: () => {
+      console.log('[main] Recording started')
+    },
+    onStopped: (filePath) => {
+      console.log(`[main] Recording stopped, file: ${filePath}`)
+      handleBatchTranscription(filePath)
+    },
+    onError: (error) => {
+      console.error(`[main] Recording error: ${error}`)
+      isRecordingActive = false
+      isBatchMode = false
+      stopStream()
+      hideOverlay()
+      showError(`❌ Recording error: ${error}`)
+      mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
+      resetRecordingState()
+    }
+  })
 }
 
 async function handleStopRecording(): Promise<void> {
@@ -301,37 +252,14 @@ async function handleStopRecording(): Promise<void> {
   isRecordingActive = false
   mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false })
 
-  if (isBatchMode) {
-    // Stop live stream if running (hybrid mode)
-    stopStream()
-    // In batch mode, stopping the recording triggers the file save → transcription pipeline
-    stopRecording()
-    if (getSettings().overlayEnabled) {
-      updateOverlay('⏳ Transcribing with large model...')
-    }
-    // Don't hide overlay yet — handleBatchTranscription will update it
-  } else {
-    // Streaming mode — get the full accumulated transcript
-    const finalText = stopStream()
-    hideOverlay()
-
-    console.log(`[main] Streaming stopped. Text: "${finalText}"`)
-
-    if (finalText) {
-      await injectText(finalText)
-
-      const result: TranscriptionResult = {
-        text: finalText,
-        timestamp: Date.now(),
-        duration: Date.now() - recordingStartTime,
-        model: getSettings().activeModel
-      }
-      addToHistory(result)
-      mainWindow?.webContents.send(IPC_CHANNELS.TRANSCRIPTION_COMPLETE, result)
-    }
-
-    streamedText = ''
+  // Stop live stream preview
+  stopStream()
+  // Stop recording — triggers file save → batch transcription pipeline
+  stopRecording()
+  if (getSettings().overlayEnabled) {
+    updateOverlay('⏳ Transcribing...')
   }
+  streamedText = ''
 }
 
 function handleBatchTranscription(audioPath: string): void {

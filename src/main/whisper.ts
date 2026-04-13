@@ -54,9 +54,8 @@ export function isHeavyModel(modelId: string): boolean {
   return modelId.includes('large') || modelId.includes('medium')
 }
 
-// Returns a lightweight model ID suitable for live streaming, or null if none available
+// Returns the tiny model for live streaming, or null if not available
 export function getLiveModelId(): string | null {
-  if (isModelDownloaded('base')) return 'base'
   if (isModelDownloaded('tiny')) return 'tiny'
   return null
 }
