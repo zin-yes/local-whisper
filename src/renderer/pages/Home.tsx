@@ -180,7 +180,18 @@ export default function Home() {
         ) : (
           history.map((item, i) => (
             <div key={i} className="history-item">
-              <div className="history-text">{item.text}</div>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                <div className="history-text" style={{ flex: 1 }}>{item.text}</div>
+                <button
+                  className="btn-copy"
+                  title="Copy to clipboard"
+                  onClick={() => {
+                    navigator.clipboard.writeText(item.text)
+                  }}
+                >
+                  📋
+                </button>
+              </div>
               <div className="history-meta">
                 <span>{formatTime(item.timestamp)}</span>
                 <span>⏱ {formatDuration(item.duration)}</span>
