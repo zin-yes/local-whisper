@@ -54,6 +54,13 @@ export function isHeavyModel(modelId: string): boolean {
   return modelId.includes('large') || modelId.includes('medium')
 }
 
+// Returns a lightweight model ID suitable for live streaming, or null if none available
+export function getLiveModelId(): string | null {
+  if (isModelDownloaded('base')) return 'base'
+  if (isModelDownloaded('tiny')) return 'tiny'
+  return null
+}
+
 // --- Streaming mode: real-time mic capture + transcription via whisper-stream ---
 
 export interface StreamOptions {
@@ -91,11 +98,11 @@ export function startStream(options: StreamOptions): void {
   const args = [
     '-m', modelPath,
     '-t', '4',
-    '--step', '3000',
-    '--length', '8000',
-    '--keep', '1000',
+    '--step', '5000',
+    '--length', '12000',
+    '--keep', '3000',
     '--keep-context',
-    '--vad-thold', '0.5'
+    '--vad-thold', '0.3'
   ]
 
   if (language && language !== 'auto') {
