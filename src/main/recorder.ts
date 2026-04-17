@@ -1,6 +1,6 @@
 import { BrowserWindow, ipcMain, session } from 'electron'
 import * as path from 'path'
-import { spawn, ChildProcess } from 'child_process'
+import { spawn } from 'child_process'
 import * as fs from 'fs'
 import { app } from 'electron'
 import { getWindowIcon } from './icon'

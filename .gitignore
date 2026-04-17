@@ -1,6 +1,20 @@
+# Dependencies
 node_modules/
+
+# Build output
 out/
 dist/
-resources/whisper/main.exe
-resources/whisper/models/*.bin
+
+# Temp files
+.tmp-icons/
 *.tmp
+*.log
+
+# Environment
+.env
+.env.*
+
+# Whisper binaries and models
+resources/whisper/*.exe
+resources/whisper/*.dll
+resources/whisper/models/*.bin

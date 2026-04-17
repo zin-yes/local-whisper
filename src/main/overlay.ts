@@ -1,8 +1,8 @@
-import { BrowserWindow, screen } from 'electron'
+import { app, BrowserWindow, screen } from 'electron'
 import * as path from 'path'
 import { getWindowIcon } from './icon'
 let overlayWindow: BrowserWindow | null = null
-const isDev = !require('electron').app.isPackaged
+const isDev = !app.isPackaged
 
 const OVERLAY_WIDTH = 600
 const OVERLAY_HEIGHT = 160

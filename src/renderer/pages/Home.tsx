@@ -4,17 +4,10 @@ import {
   Mic, Square, Copy, Check, X, Clock, Package,
   AlertTriangle, CheckCircle2, Loader2, Trash2
 } from 'lucide-react'
-import type { ElectronAPI } from '../../preload/index'
 import type { TranscriptionResult, AppStatus } from '../../shared/types'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
-
-declare global {
-  interface Window {
-    electronAPI: ElectronAPI
-  }
-}
 
 export default function Home() {
   const [status, setStatus] = useState<AppStatus | null>(null)
