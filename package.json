@@ -7,7 +7,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "package": "electron-builder --win",
+    "package": "electron-builder --win --publish never",
     "setup": "pwsh -ExecutionPolicy Bypass -File scripts/setup.ps1",
     "postinstall": "electron-builder install-app-deps"
   },
