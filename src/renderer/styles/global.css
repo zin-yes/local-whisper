@@ -76,9 +76,27 @@
   top: 0;
   left: 0;
   z-index: 100;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
 }
 .titlebar button, .titlebar a, .titlebar input {
   -webkit-app-region: no-drag;
+}
+
+.titlebar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 36px;
+  color: var(--muted-foreground);
+  transition: background 0.15s, color 0.15s;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+}
+.titlebar-btn:hover {
+  color: var(--foreground);
 }
 
 /* Recording dot pulse */

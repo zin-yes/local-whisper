@@ -37,7 +37,14 @@ export const IPC_CHANNELS = {
   // App
   GET_APP_STATUS: 'app:status',
   QUIT_APP: 'app:quit',
-  SHOW_WINDOW: 'app:show-window'
+  SHOW_WINDOW: 'app:show-window',
+
+  // Window controls
+  WINDOW_MINIMIZE: 'window:minimize',
+  WINDOW_MAXIMIZE: 'window:maximize',
+  WINDOW_CLOSE: 'window:close',
+  WINDOW_IS_MAXIMIZED: 'window:is-maximized',
+  WINDOW_MAXIMIZED_CHANGE: 'window:maximized-change'
 } as const
 
 export interface WhisperModel {

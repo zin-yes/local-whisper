@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeTheme } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu } from 'electron'
 import * as path from 'path'
 import { getSettings, setSettings, getHistory, addToHistory, clearHistory } from './store'
 import { registerHotkey, unregisterHotkey, resetRecordingState } from './hotkey'
@@ -21,16 +21,6 @@ let isBatchMode = false
 let streamedText = ''
 let recordingStartTime = 0
 
-function updateTitleBarTheme(): void {
-  if (!mainWindow) return
-  const dark = nativeTheme.shouldUseDarkColors
-  mainWindow.setTitleBarOverlay({
-    color: dark ? '#1a1a1a' : '#ffffff',
-    symbolColor: dark ? '#e0e0e0' : '#1a1a1a',
-  })
-  mainWindow.setBackgroundColor(dark ? '#1a1a1a' : '#ffffff')
-}
-
 function showError(error: string): void {
   console.error(`[main] Error: ${error}`)
   mainWindow?.webContents.send(IPC_CHANNELS.SHOW_ERROR, error)
@@ -45,12 +35,6 @@ function createMainWindow(): BrowserWindow {
     minWidth: 700,
     minHeight: 500,
     frame: false,
-    titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: '#ffffff',
-      symbolColor: '#1a1a1a',
-      height: 36
-    },
     backgroundColor: '#ffffff',
     show: false,
     webPreferences: {
@@ -62,8 +46,15 @@ function createMainWindow(): BrowserWindow {
   })
 
   mainWindow.on('ready-to-show', () => {
-    updateTitleBarTheme()
     mainWindow?.show()
+  })
+
+  mainWindow.on('maximize', () => {
+    mainWindow?.webContents.send(IPC_CHANNELS.WINDOW_MAXIMIZED_CHANGE, true)
+  })
+
+  mainWindow.on('unmaximize', () => {
+    mainWindow?.webContents.send(IPC_CHANNELS.WINDOW_MAXIMIZED_CHANGE, false)
   })
 
   mainWindow.on('close', (event) => {
@@ -170,6 +161,17 @@ function setupIPC(): void {
     mainWindow?.show()
     mainWindow?.focus()
   })
+
+  ipcMain.handle(IPC_CHANNELS.WINDOW_MINIMIZE, () => mainWindow?.minimize())
+  ipcMain.handle(IPC_CHANNELS.WINDOW_MAXIMIZE, () => {
+    if (mainWindow?.isMaximized()) {
+      mainWindow.unmaximize()
+    } else {
+      mainWindow?.maximize()
+    }
+  })
+  ipcMain.handle(IPC_CHANNELS.WINDOW_CLOSE, () => mainWindow?.hide())
+  ipcMain.handle(IPC_CHANNELS.WINDOW_IS_MAXIMIZED, () => mainWindow?.isMaximized() ?? false)
 }
 
 function handleStartRecording(): void {
@@ -339,8 +341,6 @@ app.whenReady().then(() => {
   createOverlayWindow()
   setupIPC()
   setupHotkey()
-
-  nativeTheme.on('updated', () => updateTitleBarTheme())
 
   console.log(`[main] ${APP_NAME} started`)
 })

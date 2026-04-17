@@ -67,6 +67,16 @@ const electronAPI = {
   quitApp: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.QUIT_APP),
   showWindow: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.SHOW_WINDOW),
 
+  // Window controls
+  minimizeWindow: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_MINIMIZE),
+  maximizeWindow: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_MAXIMIZE),
+  closeWindow: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_CLOSE),
+  isWindowMaximized: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_IS_MAXIMIZED),
+  onWindowMaximizedChange: (callback: (maximized: boolean) => void) => {
+    ipcRenderer.on(IPC_CHANNELS.WINDOW_MAXIMIZED_CHANGE, (_event, maximized) => callback(maximized))
+    return () => ipcRenderer.removeAllListeners(IPC_CHANNELS.WINDOW_MAXIMIZED_CHANGE)
+  },
+
   // Audio capture helpers (used by recorder's hidden window)
   sendAudioData: (base64: string) => ipcRenderer.invoke('audio-data', base64),
   recordingStarted: () => ipcRenderer.invoke('recording-started'),
