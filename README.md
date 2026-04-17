@@ -48,6 +48,10 @@ npm run build    # Build for production
 npm run package  # Create Windows installer
 ```
 
+## Automated releases
+
+Pushes to `main` trigger `.github/workflows/release.yml`, which builds the Windows installer and publishes the generated `.exe` as a new GitHub Release asset.
+
 ## Tech Stack
 
 - **Electron** + **Vite** + **React** — Modern desktop app framework

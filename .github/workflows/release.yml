@@ -1,0 +1,63 @@
+name: Build and release installer
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build
+
+      - name: Package installer
+        run: npm run package
+
+      - name: Prepare release metadata
+        id: metadata
+        shell: pwsh
+        run: |
+          $packageVersion = (Get-Content package.json | ConvertFrom-Json).version
+          $shortSha = $env:GITHUB_SHA.Substring(0, 7)
+          $tagName = "v$packageVersion-build.$env:GITHUB_RUN_NUMBER"
+          $releaseName = "Local Whisper v$packageVersion build $env:GITHUB_RUN_NUMBER"
+          $installer = Get-ChildItem dist\*.exe |
+            Where-Object { $_.Name -notmatch '__uninstaller|blockmap' } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if (-not $installer) {
+            throw "Installer executable was not found in dist\."
+          }
+
+          "tag_name=$tagName" >> $env:GITHUB_OUTPUT
+          "release_name=$releaseName" >> $env:GITHUB_OUTPUT
+          "installer_path=$($installer.FullName)" >> $env:GITHUB_OUTPUT
+          "release_body=Automated release for commit $shortSha." >> $env:GITHUB_OUTPUT
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.metadata.outputs.tag_name }}
+          name: ${{ steps.metadata.outputs.release_name }}
+          body: ${{ steps.metadata.outputs.release_body }}
+          target_commitish: ${{ github.sha }}
+          files: ${{ steps.metadata.outputs.installer_path }}
