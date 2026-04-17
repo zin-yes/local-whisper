@@ -75,6 +75,14 @@
       {
         "from": "resources/whisper",
         "to": "whisper"
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "icons/icon.ico"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icons/icon.png"
       }
     ],
     "files": [
