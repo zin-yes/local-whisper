@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, Settings, AudioWaveform } from 'lucide-react'
+import { Mic, Settings } from 'lucide-react'
 import { cn } from './lib/utils'
+import AppIcon from './components/AppIcon'
 import Home from './pages/Home'
 import SettingsPage from './pages/Settings'
 
@@ -35,13 +36,18 @@ export default function App() {
 
   return (
     <div className={isDark ? 'dark' : ''}>
-      <div className="titlebar" />
+      <div className="titlebar flex items-center px-3">
+        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+          <AppIcon className="h-4 w-4 shrink-0" />
+          <span>Local Whisper</span>
+        </div>
+      </div>
       <div className="flex h-screen pt-9">
         {/* Sidebar */}
         <nav className="w-52 shrink-0 border-r border-border bg-card flex flex-col">
           <div className="px-5 py-4 border-b border-border">
             <div className="flex items-center gap-2.5">
-              <AudioWaveform className="h-5 w-5 text-foreground" />
+              <AppIcon className="h-5 w-5 shrink-0" />
               <h1 className="text-sm font-semibold tracking-tight">Local Whisper</h1>
             </div>
           </div>

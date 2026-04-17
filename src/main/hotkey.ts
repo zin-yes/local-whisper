@@ -7,6 +7,8 @@ type HotkeyCallback = (action: 'start' | 'stop') => void
 let callback: HotkeyCallback | null = null
 let isRecording = false
 let pressedKeys = new Set<number>()
+let lastTriggerTime = 0
+const HOTKEY_COOLDOWN_MS = 500
 
 // Map from our string format to uiohook keycodes
 const KEY_MAP: Record<string, number> = {
@@ -66,6 +68,10 @@ export function registerHotkey(cb: HotkeyCallback): void {
     pressedKeys.add(e.keycode)
 
     if (areAllKeysPressed(requiredKeys)) {
+      const now = Date.now()
+      if (now - lastTriggerTime < HOTKEY_COOLDOWN_MS) return
+      lastTriggerTime = now
+
       if (settings.recordingMode === 'toggle') {
         if (!isRecording) {
           isRecording = true
@@ -111,4 +117,5 @@ export function unregisterHotkey(): void {
 export function resetRecordingState(): void {
   isRecording = false
   pressedKeys.clear()
+  lastTriggerTime = 0
 }

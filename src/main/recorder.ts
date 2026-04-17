@@ -3,6 +3,7 @@ import * as path from 'path'
 import { spawn, ChildProcess } from 'child_process'
 import * as fs from 'fs'
 import { app } from 'electron'
+import { getWindowIcon } from './icon'
 
 let outputPath: string = ''
 
@@ -32,6 +33,7 @@ export async function startRecording(options: RecorderOptions): Promise<void> {
   })
 
   captureWindow = new BrowserWindow({
+    icon: getWindowIcon(),
     show: false,
     width: 1,
     height: 1,

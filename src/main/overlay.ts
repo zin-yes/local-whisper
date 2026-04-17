@@ -1,5 +1,6 @@
 import { BrowserWindow, screen } from 'electron'
 import * as path from 'path'
+import { getWindowIcon } from './icon'
 let overlayWindow: BrowserWindow | null = null
 const isDev = !require('electron').app.isPackaged
 
@@ -25,6 +26,7 @@ export function createOverlayWindow(): BrowserWindow {
   const { x, y } = getOverlayPositionForCursor()
 
   overlayWindow = new BrowserWindow({
+    icon: getWindowIcon(),
     width: OVERLAY_WIDTH,
     height: OVERLAY_HEIGHT,
     x,

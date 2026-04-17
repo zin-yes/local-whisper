@@ -1,6 +1,5 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, nativeTheme } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeTheme } from 'electron'
 import * as path from 'path'
-import * as fs from 'fs'
 import { getSettings, setSettings, getHistory, addToHistory, clearHistory } from './store'
 import { registerHotkey, unregisterHotkey, resetRecordingState } from './hotkey'
 import {
@@ -12,6 +11,7 @@ import { startRecording, stopRecording, cleanupTempFiles } from './recorder'
 import { listModels, downloadModel, deleteModel } from './models'
 import { createOverlayWindow, showOverlay, updateOverlay, hideOverlay } from './overlay'
 import { injectText } from './injector'
+import { APP_NAME, configureAppIdentity, getTrayIcon, getWindowIcon } from './icon'
 import { IPC_CHANNELS, AppStatus, TranscriptionResult } from '../shared/types'
 
 let mainWindow: BrowserWindow | null = null
@@ -38,6 +38,8 @@ function showError(error: string): void {
 
 function createMainWindow(): BrowserWindow {
   mainWindow = new BrowserWindow({
+    title: APP_NAME,
+    icon: getWindowIcon(),
     width: 900,
     height: 650,
     minWidth: 700,
@@ -79,12 +81,11 @@ function createMainWindow(): BrowserWindow {
 }
 
 function createTray(): void {
-  const icon = nativeImage.createEmpty()
-  tray = new Tray(icon)
+  tray = new Tray(getTrayIcon())
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Show Local Whisper',
+      label: `Show ${APP_NAME}`,
       click: () => {
         mainWindow?.show()
         mainWindow?.focus()
@@ -100,7 +101,7 @@ function createTray(): void {
     }
   ])
 
-  tray.setToolTip('Local Whisper')
+  tray.setToolTip(APP_NAME)
   tray.setContextMenu(contextMenu)
 
   tray.on('click', () => {
@@ -332,6 +333,7 @@ function setupHotkey(): void {
 }
 
 app.whenReady().then(() => {
+  configureAppIdentity()
   createMainWindow()
   createTray()
   createOverlayWindow()
@@ -340,7 +342,7 @@ app.whenReady().then(() => {
 
   nativeTheme.on('updated', () => updateTitleBarTheme())
 
-  console.log('[main] Local Whisper started')
+  console.log(`[main] ${APP_NAME} started`)
 })
 
 app.on('window-all-closed', () => {})

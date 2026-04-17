@@ -24,7 +24,6 @@
     "electron-store": "^8.2.0",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.8.0",
-    "node-global-key-listener": "^0.3.0",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.2",
     "uiohook-napi": "^1.5.5"
@@ -39,6 +38,8 @@
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-router-dom": "^7.14.0",
+    "sharp": "^0.34.5",
+    "to-ico": "^1.1.5",
     "typescript": "^6.0.2",
     "vite": "^7.3.2"
   },
@@ -53,12 +54,19 @@
       "target": [
         "nsis"
       ],
-      "icon": "build/icon.png"
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Local Whisper",
+      "uninstallDisplayName": "Local Whisper",
+      "include": "build/installer.nsh"
     },
+    "npmRebuild": false,
     "asar": true,
     "asarUnpack": [
       "**/*.node"
