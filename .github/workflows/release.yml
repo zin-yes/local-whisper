@@ -22,8 +22,14 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Install ffmpeg
+        run: choco install ffmpeg -y
+
       - name: Install dependencies
         run: npm ci
+
+      - name: Download whisper binaries
+        run: pwsh -ExecutionPolicy Bypass -File scripts/setup.ps1
 
       - name: Build app
         run: npm run build

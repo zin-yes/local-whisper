@@ -31,9 +31,10 @@ A Windows desktop app for local voice-to-text transcription, powered by [whisper
 
 - [Node.js](https://nodejs.org/) 18+
 - [ffmpeg](https://ffmpeg.org/) in your PATH
-- [whisper.cpp](https://github.com/ggerganov/whisper.cpp/releases) binaries placed in `resources/whisper/`:
-  - `whisper-cli.exe` (required)
-  - `whisper-stream.exe` (optional, enables real-time streaming preview)
+
+```bash
+winget install Gyan.FFmpeg
+```
 
 ### Setup
 
@@ -41,6 +42,7 @@ A Windows desktop app for local voice-to-text transcription, powered by [whisper
 git clone <repo-url>
 cd local-whisper
 npm install
+npm run setup    # downloads whisper.cpp binaries into resources/whisper/
 npm run dev
 ```
 

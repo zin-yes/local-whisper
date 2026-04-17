@@ -8,6 +8,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "package": "electron-builder --win",
+    "setup": "pwsh -ExecutionPolicy Bypass -File scripts/setup.ps1",
     "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [
