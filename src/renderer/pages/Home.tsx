@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Mic, Square, Copy, Check, X, Clock, Package,
-  AlertTriangle, CheckCircle2, Loader2, Trash2
+  AlertTriangle, CheckCircle2, Loader2, Trash2, Upload
 } from 'lucide-react'
 import type { TranscriptionResult, AppStatus } from '../../shared/types'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
+import { cn } from '../lib/utils'
 
 export default function Home() {
   const [status, setStatus] = useState<AppStatus | null>(null)
@@ -18,6 +19,9 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null)
   const [errorKey, setErrorKey] = useState(0)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+  const [isDraggingFile, setIsDraggingFile] = useState(false)
+  const [isProcessingFile, setIsProcessingFile] = useState(false)
+  const dragCounterRef = useRef(0)
 
   useEffect(() => {
     window.electronAPI.getAppStatus().then(setStatus)
@@ -63,9 +67,125 @@ export default function Home() {
   }
 
   const handleCopy = (text: string, index: number) => {
-    navigator.clipboard.writeText(text)
+    window.electronAPI.writeToClipboard(text)
     setCopiedIndex(index)
     setTimeout(() => setCopiedIndex(null), 2000)
+  }
+
+  const audioBufferToWav = (audioBuffer: AudioBuffer): Uint8Array => {
+    const samples = audioBuffer.getChannelData(0)
+    const byteLength = 44 + samples.length * 2
+    const arrayBuffer = new ArrayBuffer(byteLength)
+    const view = new DataView(arrayBuffer)
+
+    const writeString = (offset: number, str: string) => {
+      for (let i = 0; i < str.length; i++) {
+        view.setUint8(offset + i, str.charCodeAt(i))
+      }
+    }
+
+    writeString(0, 'RIFF')
+    view.setUint32(4, byteLength - 8, true)
+    writeString(8, 'WAVE')
+    writeString(12, 'fmt ')
+    view.setUint32(16, 16, true)
+    view.setUint16(20, 1, true) // PCM format
+    view.setUint16(22, 1, true) // mono
+    view.setUint32(24, 16000, true) // 16kHz sample rate
+    view.setUint32(28, 32000, true) // byte rate
+    view.setUint16(32, 2, true) // block align
+    view.setUint16(34, 16, true) // 16-bit depth
+    writeString(36, 'data')
+    view.setUint32(40, samples.length * 2, true)
+
+    let offset = 44
+    for (let i = 0; i < samples.length; i++) {
+      const clampedSample = Math.max(-1, Math.min(1, samples[i]))
+      view.setInt16(offset, clampedSample < 0 ? clampedSample * 0x8000 : clampedSample * 0x7FFF, true)
+      offset += 2
+    }
+
+    return new Uint8Array(arrayBuffer)
+  }
+
+  const convertFileToWav = async (file: File): Promise<Uint8Array> => {
+    const arrayBuffer = await file.arrayBuffer()
+    const audioContext = new AudioContext()
+
+    try {
+      const decodedBuffer = await audioContext.decodeAudioData(arrayBuffer)
+
+      // Resample to 16kHz mono using OfflineAudioContext (required by whisper)
+      const targetSampleRate = 16000
+      const targetLength = Math.ceil(decodedBuffer.duration * targetSampleRate)
+      const offlineContext = new OfflineAudioContext(1, targetLength, targetSampleRate)
+      const source = offlineContext.createBufferSource()
+      source.buffer = decodedBuffer
+      source.connect(offlineContext.destination)
+      source.start(0)
+
+      const renderedBuffer = await offlineContext.startRendering()
+      return audioBufferToWav(renderedBuffer)
+    } finally {
+      audioContext.close()
+    }
+  }
+
+  const handleFileDrop = async (file: File) => {
+    if (isRecording || isTranscribing || isProcessingFile) return
+
+    const isAudio = file.type.startsWith('audio/')
+    const isVideo = file.type.startsWith('video/')
+
+    if (!isAudio && !isVideo) {
+      setError('Only audio and video files are supported.')
+      setErrorKey(k => k + 1)
+      return
+    }
+
+    setIsProcessingFile(true)
+
+    try {
+      const wavData = await convertFileToWav(file)
+      setIsProcessingFile(false)
+      await window.electronAPI.transcribeFile(wavData)
+    } catch (err: unknown) {
+      setIsProcessingFile(false)
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      setError(`Failed to process file: ${message}`)
+      setErrorKey(k => k + 1)
+    }
+  }
+
+  const handleDragEnter = (event: React.DragEvent) => {
+    event.preventDefault()
+    dragCounterRef.current += 1
+    if (dragCounterRef.current === 1) {
+      setIsDraggingFile(true)
+    }
+  }
+
+  const handleDragLeave = (event: React.DragEvent) => {
+    event.preventDefault()
+    dragCounterRef.current -= 1
+    if (dragCounterRef.current === 0) {
+      setIsDraggingFile(false)
+    }
+  }
+
+  const handleDragOver = (event: React.DragEvent) => {
+    event.preventDefault()
+  }
+
+  const handleDrop = async (event: React.DragEvent) => {
+    event.preventDefault()
+    dragCounterRef.current = 0
+    setIsDraggingFile(false)
+
+    const file = event.dataTransfer.files[0]
+    if (file) {
+      await handleFileDrop(file)
+    }
   }
 
   const formatTime = (timestamp: number) =>
@@ -190,6 +310,45 @@ export default function Home() {
             <span className="text-xs text-muted-foreground">
               or press <kbd className="inline-flex items-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium">Ctrl+Shift+Space</kbd>
             </span>
+          </div>
+        </CardContent>
+      </Card>
+
+
+      {/* File transcription drop zone */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Transcribe File</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            className={cn(
+              'border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-default',
+              isDraggingFile
+                ? 'border-primary bg-primary/5'
+                : 'border-border hover:border-primary/40'
+            )}
+          >
+            {isProcessingFile ? (
+              <div className="flex flex-col items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-6 w-6 animate-spin" />
+                <span>Converting file...</span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2">
+                <Upload className="h-6 w-6 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  Drop an audio or video file to transcribe
+                </p>
+                <p className="text-xs text-muted-foreground/60">
+                  Supports MP3, MP4, WAV, M4A, OGG, and more
+                </p>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
