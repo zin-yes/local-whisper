@@ -157,7 +157,7 @@ export default function Home() {
     try {
       const wavData = await convertFileToWav(file)
       setIsProcessingFile(false)
-      await window.electronAPI.transcribeFile(wavData)
+      window.electronAPI.transcribeFile(wavData)
     } catch (err: unknown) {
       setIsProcessingFile(false)
       const message = err instanceof Error ? err.message : 'Unknown error'
