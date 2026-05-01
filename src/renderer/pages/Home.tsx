@@ -131,13 +131,22 @@ export default function Home() {
     }
   }
 
+  const KNOWN_AUDIO_VIDEO_EXTENSIONS = new Set([
+    'mp3', 'mp4', 'm4a', 'wav', 'ogg', 'flac', 'opus', 'mkv', 'webm',
+    'mov', 'avi', 'aac', 'wma', 'aiff', 'aif'
+  ])
+
   const handleFileDrop = async (file: File) => {
     if (isRecording || isTranscribing || isProcessingFile) return
 
     const isAudio = file.type.startsWith('audio/')
     const isVideo = file.type.startsWith('video/')
+    // file.type can be empty on Windows for many formats (e.g. .flac, .opus, .mkv)
+    // so fall back to extension check when the MIME type is missing
+    const fileExtension = file.name.split('.').pop()?.toLowerCase() ?? ''
+    const hasKnownExtension = KNOWN_AUDIO_VIDEO_EXTENSIONS.has(fileExtension)
 
-    if (!isAudio && !isVideo) {
+    if (!isAudio && !isVideo && !hasKnownExtension) {
       setError('Only audio and video files are supported.')
       setErrorKey(k => k + 1)
       return

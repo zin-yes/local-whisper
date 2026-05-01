@@ -154,7 +154,7 @@ function setupIPC(): void {
   ipcMain.handle(IPC_CHANNELS.START_RECORDING, () => handleStartRecording())
   ipcMain.handle(IPC_CHANNELS.STOP_RECORDING, () => handleStopRecording())
 
-  ipcMain.handle(IPC_CHANNELS.TRANSCRIBE_FILE, async (_event, audioData: Buffer) => {
+  ipcMain.handle(IPC_CHANNELS.TRANSCRIBE_FILE, async (_event, audioData: Uint8Array) => {
     if (isRecordingActive || isBatchMode) {
       showError('Cannot transcribe a file while recording is active.')
       return
@@ -185,6 +185,7 @@ function setupIPC(): void {
     mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false, isTranscribing: true })
 
     await new Promise<void>((resolve) => {
+      try {
       transcribe({
         audioPath: tempFilePath,
         modelId: settings.activeModel,
@@ -219,6 +220,14 @@ function setupIPC(): void {
           resolve()
         }
       })
+      } catch (err: unknown) {
+        isBatchMode = false
+        try { fs.unlinkSync(tempFilePath) } catch { /* ignore cleanup errors */ }
+        const message = err instanceof Error ? err.message : 'Unknown error'
+        showError(`File transcription failed: ${message}`)
+        mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false, isTranscribing: false })
+        resolve()
+      }
     })
   })
 
