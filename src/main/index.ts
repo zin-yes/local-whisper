@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu } from 'electron'
 import * as path from 'path'
+import * as fs from 'fs'
 import { getSettings, setSettings, getHistory, addToHistory, clearHistory } from './store'
 import { registerHotkey, unregisterHotkey, resetRecordingState } from './hotkey'
 import {
@@ -152,6 +153,78 @@ function setupIPC(): void {
 
   ipcMain.handle(IPC_CHANNELS.START_RECORDING, () => handleStartRecording())
   ipcMain.handle(IPC_CHANNELS.STOP_RECORDING, () => handleStopRecording())
+
+  ipcMain.on(IPC_CHANNELS.TRANSCRIBE_FILE, async (_event, audioData: Uint8Array) => {
+    if (isRecordingActive || isBatchMode) {
+      showError('Cannot transcribe a file while recording is active.')
+      return
+    }
+
+    const settings = getSettings()
+
+    if (!settings.activeModel) {
+      showError('No model selected. Please download and select a model in Settings.')
+      return
+    }
+
+    if (!isModelDownloaded(settings.activeModel)) {
+      showError(`Model "${settings.activeModel}" is not downloaded. Please download it from Settings.`)
+      return
+    }
+
+    if (!isCliBinaryAvailable()) {
+      showError('whisper-cli.exe not found in resources/whisper/.')
+      return
+    }
+
+    const tempFilePath = path.join(app.getPath('temp'), `whisper-file-${Date.now()}.wav`)
+    fs.writeFileSync(tempFilePath, audioData)
+
+    isBatchMode = true
+    const fileTranscriptionStartTime = Date.now()
+    mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false, isTranscribing: true })
+
+    try {
+      transcribe({
+        audioPath: tempFilePath,
+        modelId: settings.activeModel,
+        language: settings.language,
+        onPartial: (text) => {
+          mainWindow?.webContents.send(IPC_CHANNELS.TRANSCRIPTION_PARTIAL, text)
+        },
+        onComplete: (text) => {
+          isBatchMode = false
+          try { fs.unlinkSync(tempFilePath) } catch { /* ignore cleanup errors */ }
+
+          const finalText = text.trim()
+          if (finalText) {
+            const result: TranscriptionResult = {
+              text: finalText,
+              timestamp: Date.now(),
+              duration: Date.now() - fileTranscriptionStartTime,
+              model: settings.activeModel
+            }
+            addToHistory(result)
+            mainWindow?.webContents.send(IPC_CHANNELS.TRANSCRIPTION_COMPLETE, result)
+          }
+
+          mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false, isTranscribing: false })
+        },
+        onError: (error) => {
+          isBatchMode = false
+          try { fs.unlinkSync(tempFilePath) } catch { /* ignore cleanup errors */ }
+          showError(`File transcription error: ${error}`)
+          mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false, isTranscribing: false })
+        }
+      })
+    } catch (err: unknown) {
+      isBatchMode = false
+      try { fs.unlinkSync(tempFilePath) } catch { /* ignore cleanup errors */ }
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      showError(`File transcription failed: ${message}`)
+      mainWindow?.webContents.send(IPC_CHANNELS.RECORDING_STATUS, { isRecording: false, isTranscribing: false })
+    }
+  })
 
   ipcMain.handle(IPC_CHANNELS.QUIT_APP, () => {
     mainWindow?.destroy()

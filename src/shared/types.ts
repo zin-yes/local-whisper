@@ -30,6 +30,9 @@ export const IPC_CHANNELS = {
   GET_ACTIVE_MODEL: 'models:get-active',
   SET_ACTIVE_MODEL: 'models:set-active',
 
+  // File transcription
+  TRANSCRIBE_FILE: 'transcribe:file',
+
   // History
   GET_HISTORY: 'history:get',
   CLEAR_HISTORY: 'history:clear',

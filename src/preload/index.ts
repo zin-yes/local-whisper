@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, clipboard } from 'electron'
 import { IPC_CHANNELS, AppSettings, WhisperModel, TranscriptionResult, AppStatus } from '../shared/types'
 
 const electronAPI = {
@@ -76,6 +76,13 @@ const electronAPI = {
     ipcRenderer.on(IPC_CHANNELS.WINDOW_MAXIMIZED_CHANGE, (_event, maximized) => callback(maximized))
     return () => ipcRenderer.removeAllListeners(IPC_CHANNELS.WINDOW_MAXIMIZED_CHANGE)
   },
+
+  // Clipboard
+  writeToClipboard: (text: string): void => clipboard.writeText(text),
+
+  // File transcription
+  transcribeFile: (audioData: Uint8Array): void =>
+    ipcRenderer.send(IPC_CHANNELS.TRANSCRIBE_FILE, audioData),
 
   // Audio capture helpers (used by recorder's hidden window)
   sendAudioData: (base64: string) => ipcRenderer.invoke('audio-data', base64),
